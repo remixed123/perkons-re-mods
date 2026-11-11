@@ -7,7 +7,6 @@ from perkons.patch import PatchError
 
 TARGET = 'v1.3.0'
 SUMMARY = 'Sidechain: the master voice ducks the other voices (depth, attack, hold, release)'
-RISK = 'medium'
 
 MOD = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC_M7 = os.path.join(MOD, 'src', 'm7')
