@@ -1,7 +1,7 @@
 {
  "format": 1,
  "repo": "remixed123/perkons-re-mods",
- "description": "Akords, a chord synth voice for the Perkons HD-01",
+ "description": "Akords, a chord synth voice, and FX Sidechain, kick-style pumping, for the Perkons HD-01",
  "mods": [
   {
    "id": "voice-akords",
@@ -29,6 +29,48 @@
       },
       "store": {
        "remixed123/perkons-re-mods:voice-akords/src/m4/akords_m4.c:.pk_axi": 1624
+      }
+     },
+     "takeovers": {},
+     "borrows": {}
+    }
+   }
+  },
+  {
+   "id": "fx-sidechain",
+   "dir": "fx-sidechain",
+   "title": "FX SIDECHAIN",
+   "summary": "A master voice's triggers duck the other three voices. Depth, attack, hold and release are set on the four step rows.",
+   "readme": "fx-sidechain/README.md",
+   "patches": [
+    "fx_sidechain"
+   ],
+   "code": "sc",
+   "kind": "mod",
+   "requires": [],
+   "conflicts": [],
+   "target": "1.3.0",
+   "memory": {
+    "v1.3.0": {
+     "ram": {
+      "voice": {
+       "remixed123/perkons-re-mods:fx-sidechain/src/m7/sidechain.c:.bss.master": 1,
+       "remixed123/perkons-re-mods:fx-sidechain/src/m7/sidechain.c:.bss.on": 3,
+       "remixed123/perkons-re-mods:fx-sidechain/src/m7/sidechain.c:.bss.hold_n": 4,
+       "remixed123/perkons-re-mods:fx-sidechain/src/m7/sidechain.c:.bss.rel_k": 4,
+       "remixed123/perkons-re-mods:fx-sidechain/src/m7/sidechain.c:.bss.att_inc": 4,
+       "remixed123/perkons-re-mods:fx-sidechain/src/m7/sidechain.c:.bss.depth": 4,
+       "remixed123/perkons-re-mods:fx-sidechain/src/m7/sidechain.c:.bss.env": 48,
+       "remixed123/perkons-re-mods:fx-sidechain/src/m7/sidechain.c:.bss.orig": 16,
+       "remixed123/perkons-re-mods:fx-sidechain/src/m7/sidechain.c:.bss.vt": 64
+      },
+      "main": {
+       "remixed123/perkons-re-mods:fx-sidechain/src/m4/sidechain_m4.c:.bss.dirty": 4,
+       "remixed123/perkons-re-mods:fx-sidechain/src/m4/sidechain_m4.c:.bss.sync_at": 4,
+       "remixed123/perkons-re-mods:fx-sidechain/src/m4/sidechain_m4.c:.bss.opened": 1,
+       "remixed123/perkons-re-mods:fx-sidechain/src/m4/sidechain_m4.c:.bss.sync_down": 1,
+       "remixed123/perkons-re-mods:fx-sidechain/src/m4/sidechain_m4.c:.bss.cur": 6,
+       "remixed123/perkons-re-mods:fx-sidechain/src/m4/sidechain_m4.c:.bss.kit_tab": 256
       }
      },
      "takeovers": {},
