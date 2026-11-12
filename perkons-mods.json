@@ -1,7 +1,7 @@
 {
  "format": 1,
  "repo": "remixed123/perkons-re-mods",
- "description": "Akords, a chord synth voice, Kick Lab, a kick drum synth voice, and FX Sidechain, kick-style pumping, for the Perkons HD-01",
+ "description": "Akords, a chord synth voice, Kick Lab, a kick drum synth voice, Synth Lab, a mono synth voice, and FX Sidechain, kick-style pumping, for the Perkons HD-01",
  "mods": [
   {
    "id": "fx-sidechain",
@@ -113,6 +113,63 @@
        "remixed123/perkons-re-mods:voice-kick-lab/src/m4/kick_lab_m4.c:.bss.fol": 24,
        "remixed123/perkons-re-mods:voice-kick-lab/src/m4/kick_lab_m4.c:.bss.cur": 24,
        "remixed123/perkons-re-mods:voice-kick-lab/src/m4/kick_lab_m4.c:.bss.kit_set": 1536
+      }
+     },
+     "takeovers": {},
+     "borrows": {}
+    }
+   }
+  },
+  {
+   "id": "voice-synth-lab",
+   "dir": "voice-synth-lab",
+   "title": "SYNTH LAB",
+   "summary": "A MONO SYNTH: THREE OSCILLATORS WITH HARD SYNC, A WAVEFOLDER, A FILTER WITH ITS OWN ENVELOPE, EIGHT LFOS, 16 PRESETS, RANDOM, TWEAK AND MUTATE. HOLD ITS STEP ON THE ENGINE PAGE FOR ITS CONFIGURATION PAGE.",
+   "readme": "voice-synth-lab/README.md",
+   "patches": [
+    "voice_synth_lab"
+   ],
+   "code": "sy",
+   "kind": "voice",
+   "requires": [],
+   "conflicts": [],
+   "target": "1.3.0",
+   "memory": {
+    "v1.3.0": {
+     "ram": {
+      "voice": {
+       "remixed123/perkons-re-mods:voice-synth-lab/src/m7/synth_lab.c:.bss.stashed": 4,
+       "remixed123/perkons-re-mods:voice-synth-lab/src/m7/synth_lab.c:.bss.stash": 164,
+       "remixed123/perkons-re-mods:voice-synth-lab/src/m7/synth_lab.c:.bss.drive": 4,
+       "remixed123/perkons-re-mods:voice-synth-lab/src/m7/synth_lab.c:.bss.bpm": 4
+      },
+      "main": {
+       "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:.bss.dirty": 4,
+       "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:.bss.anchor": 12,
+       "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:.bss.all_last": 4,
+       "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:.bss.tweak_done": 4,
+       "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:.bss.tweak_at": 4,
+       "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:.bss.tweak_key": 4,
+       "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:.bss.turning": 4,
+       "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:.bss.cell_key": 4,
+       "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:.bss.cell1": 4,
+       "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:.bss.live_any": 4,
+       "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:.bss.live_at": 4,
+       "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:.bss.live_checked": 4,
+       "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:.bss.live_sent": 8,
+       "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:.bss.holding": 4,
+       "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:.bss.hold_matched": 4,
+       "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:.bss.hold_from": 4,
+       "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:.bss.rng": 4,
+       "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:.bss.kit_ok": 8,
+       "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:.bss.active": 4,
+       "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:.bss.ready": 4,
+       "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:.bss.editing": 4,
+       "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:.bss.undo_ok": 4,
+       "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:.bss.fol": 24,
+       "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:.bss.undo": 160,
+       "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:.bss.sy_cur": 160,
+       "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:.bss.kit_snd": 10240
       }
      },
      "takeovers": {},
