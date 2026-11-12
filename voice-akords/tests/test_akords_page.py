@@ -9,10 +9,12 @@ from fixtures import build_patched, require_image
 from perkons.fwimage import Image
 from perkons.rig import M4Rig
 
+from ak_sound import PRESET_FIELDS, ak_pack
+
 SHIFT, KIT, MOD, PATTERN, TRIG1 = 0x47, 0x41, 0x43, 0x40, 0x4b
 MAIN_MODE, MOD_MODE, KIT_MODE = 0, 3, 5
 AKORDS_PAGE, ENGINES_PAGE = 17, 18            # the mods' pages after the stock 0-16, in name order
-MSG_AKORDS, MSG_AKORDS_DRIVE, MSG_AKORDS_PROG, MSG_AKORDS_SOUND, MSG_VOICE_MAP = 4, 5, 6, 7, 8             # the M7 host's message types, in name order
+MSG_AKORDS, MSG_AKORDS_DRIVE, MSG_AKORDS_PROG, MSG_AKORDS_SOUND, MSG_AKORDS_VOICE, MSG_VOICE_MAP = 4, 5, 6, 7, 8, 9             # the M7 host's message types, in name order
 COL = 4                                       # Akords' column (engine 5)
 _image = {}
 
@@ -177,7 +179,7 @@ class TestSettingsPage(unittest.TestCase):
         self.assertEqual(self.settings(r)[-1], [[0] * 4, [0] * 4, [0] * 4, [0, 0, 6, 0]])
         self.press(r, 16 * 0 + 13)                              # row 1 step 14: preset 14 (Talk)
         self.assertEqual(self.settings(r)[-1][3], [13, 0, 6, 0])
-        self.assertEqual(self.ui(r)[2][11:], [0] * 5, 'nothing past the scales')
+        self.assertEqual(self.ui(r)[2][11:], [0x10] * 5, 'the options past the scales, off')
 
     def test_the_trigger_keys_play(self):
         r = self.rig()
@@ -250,9 +252,10 @@ class TestSettingsPage(unittest.TestCase):
         self.press(r, SHIFT)
         self.apply(r)
         kix = r.e.sd_written['banks/00/kits/00.kix']
-        self.assertEqual(kix[:12], b'PKX1AKRD' + struct.pack('<I', 36))
-        self.assertEqual(kix[12 + 9], 7, 'voice 2\'s preset')
-        self.assertEqual(kix[48:], b'VMAP' + struct.pack('<IH', 2, 0x3240))
+        self.assertEqual(kix[:12], b'PKX1AKRD' + struct.pack('<I', 104))
+        self.assertEqual(kix[12 + 26], 7, 'voice 2\'s preset')
+        self.assertEqual(kix[12 + 26 + 10:12 + 52], bytes(ak_pack(PRESET_FIELDS[7])), 'its sound')
+        self.assertEqual(kix[116:], b'VMAP' + struct.pack('<IH', 2, 0x3240))
 
     def test_kit_load_sends_its_settings(self):
         r = self.rig()
@@ -282,9 +285,9 @@ class TestSettingsPage(unittest.TestCase):
         r.e.call(r.cave['pk_ak_kit_load'], 5, max_insns=50_000_000)
         self.assertEqual(self.settings(r), [[[1, 2, 3, 4], [0, 9, 0, 0], [0] * 4, [0] * 4]])
         buf = r.sym.g['json_buf']                               # the host's record buffer
-        self.assertEqual(r.e.call(r.cave['pk_ak_kit_save'], 2, 5, buf, 64, max_insns=5_000_000), 36)
-        rec = list(r.e.uc.mem_read(buf, 36))
-        self.assertEqual(rec[:5] + rec[9:14], [1, 2, 3, 4, 5, 0, 9, 0, 0, 0], 'progression 6 out of range: 0')
+        self.assertEqual(r.e.call(r.cave['pk_ak_kit_save'], 2, 5, buf, 128, max_insns=5_000_000), 104)
+        rec = list(r.e.uc.mem_read(buf, 104))
+        self.assertEqual(rec[:5] + rec[26:31], [1, 2, 3, 4, 5, 0, 9, 0, 0, 0], 'progression 6 out of range: 0')
 
     def test_the_largest_settings_survive_the_kit_table(self):
         top = [13, 9, 10, 11, 5]                                # Talk, Power smooth, Chromatic, B, Deep
@@ -294,9 +297,9 @@ class TestSettingsPage(unittest.TestCase):
         r.e.call(r.cave['pk_ak_kit_load'], 5, max_insns=50_000_000)
         self.assertEqual(self.settings(r), [[top[:4]] * 4])
         buf = r.sym.g['json_buf']
-        self.assertEqual(r.e.call(r.cave['pk_ak_kit_save'], 2, 5, buf, 64, max_insns=5_000_000), 36)
-        rec = list(r.e.uc.mem_read(buf, 36))
-        self.assertEqual([rec[9 * v:9 * v + 5] for v in range(4)], [top] * 4)
+        self.assertEqual(r.e.call(r.cave['pk_ak_kit_save'], 2, 5, buf, 128, max_insns=5_000_000), 104)
+        rec = list(r.e.uc.mem_read(buf, 104))
+        self.assertEqual([rec[26 * v:26 * v + 5] for v in range(4)], [top] * 4)
 
     # -- progressions ---------------------------------------------------------------------
     def test_row_2_has_the_chords_then_off_and_the_progressions(self):

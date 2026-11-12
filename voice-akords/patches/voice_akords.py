@@ -6,11 +6,12 @@ import os
 from perkons.patch import PatchError
 
 TARGET = 'v1.3.0'
-SUMMARY = 'voice-akords chord synth voice for voice-map: chords of up to 5 notes, progressions, 14 presets'
+SUMMARY = 'voice-akords chord synth voice for voice-map: chords of up to 5 notes, progressions, 16 presets, Random'
 
 MOD = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(MOD, 'src', 'm7')
 SRC_M4 = os.path.join(MOD, 'src', 'm4')
+COMMON = os.path.join(MOD, 'src', 'common')     # ak_sound.h: a voice's sound, both cores
 
 
 def apply(p, arg=None):
@@ -24,7 +25,7 @@ def apply(p, arg=None):
     vm = p.shared.setdefault('voice_map', {'engines': {}})
     if 'akords' in vm['engines']:
         raise PatchError('voice-map engine name akords already taken')
-    vm['engines']['akords'] = {'sources': [os.path.join(SRC, 'akords.c')], 'include_dirs': [SRC],
+    vm['engines']['akords'] = {'sources': [os.path.join(SRC, 'akords.c')], 'include_dirs': [SRC, COMMON],
                                'build': 'pk_ak_build', 'slot': int(arg) if arg else None,
                                'page': 'akords'}
     # M7: each voice's settings (preset, chord type, scale, root), in order with the triggers
@@ -35,6 +36,8 @@ def apply(p, arg=None):
     m7host.host(p).message('akords-prog', 'pk_ak_on_prog', ordered=True)
     # M7: a kit's sound: the values not on the knobs when it loads
     m7host.host(p).message('akords-sound', 'pk_ak_on_sound', ordered=True)
+    # M7: a voice's whole sound (preset, Random) and its options (Strum, Spread, Bass drop, Mutate)
+    m7host.host(p).message('akords-voice', 'pk_ak_on_voice', ordered=True)
 
     def engine_header():
         from perkons.voicemap import numbered
@@ -44,7 +47,7 @@ def apply(p, arg=None):
 
     # M4: the settings and sound of each kit's voices (kit sidecar record AKRD), the settings page
     h = m4host.host(p)
-    h.add([os.path.join(SRC_M4, 'akords_m4.c')], [SRC_M4],
+    h.add([os.path.join(SRC_M4, 'akords_m4.c')], [SRC_M4, COMMON],
           headers={'pk_ak_engine.h': engine_header})
     h.store('kit', 'AKRD', 'pk_ak_kit_save', 'pk_ak_kit_restore')
     for site in sorted(k for k in p.symbols['m4'].sites if k.startswith('kits.load.')):

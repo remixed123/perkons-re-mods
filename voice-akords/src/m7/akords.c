@@ -19,7 +19,11 @@
  *
  * Preset, chord type, scale and root come from the M4 (its settings page, kept with the
  * kit): the ordered message "akords", 4 voices x 4 bytes, kept here per output (an
- * engine rebuilt by voice-map finds them again). Each voice's DRIVE comes from the M4 too
+ * engine rebuilt by voice-map finds them again). So does each voice's sound (message
+ * "akords-voice": the preset's own, played from PRESETS exactly, or one Random made, as
+ * ak_sound.h's values) and its options: Strum (the notes start 15 ms apart, up or down),
+ * Spread (the second-highest note an octave down), Bass drop (the lowest an octave down)
+ * and Mutate (each chord a small variation of the sound). Each voice's DRIVE comes from the M4 too
  * (message "akords-drive"): the level follows it (DRIVE_BOOST_DB / DRIVE_CUT_DB). And the
  * progression's offset, in scale degrees above TUNE's (message "akords-prog", sent before
  * the triggers of the step where it changes): each chord keeps the one it started with.
@@ -36,6 +40,8 @@
  * (nor MODE the filter) until it sends it again unmarked, once they've arrived. */
 #include <stdint.h>
 #include "fw_m7.h"
+#include "ak_sound.h"
+#include "pk_util.h"                /* pk_copy (no libc memcpy here) */
 
 #define SR              48000.0f
 #define NOTE_REF        36          /* trigger note meaning "no transposition" */
@@ -78,11 +84,13 @@ enum { CH_DIA, CH_DIA_S, CH_DIA7, CH_DIA7_S, CH_DIA9, CH_DIA9_S, CH_QUARTAL, CH_
        CH_POWER, CH_POWER_S, NCHORD };
 
 /* the settings page's positions (steps 1-16) */
-#define NPRESET 14
+#define NPRESET AK_NPRESET
 #define NSCALE  11
 #define NROOT   12                  /* the 12 semitones from C */
 
-/* ---- presets (the iOS synth's factory patches) --------------------------------------- */
+/* ---- presets (the iOS synth's factory patches) --------------------------------------- *
+ * A voice playing a preset's own sound plays these; a sound of its own (Random, or Mutate's
+ * variations) comes as ak_sound.h's values, turned into the same units (decode). */
 
 typedef struct {
     uint8_t wave[2];
@@ -142,6 +150,14 @@ static const preset_t PRESETS[NPRESET] = {
      * each chord (formant) */
     {{W_SAW, W_SAW}, {0, 1}, {0, 4}, {0.85f, 0.5f}, {0.5f, 0.5f}, F_FORMANT,
      4874, 0.5f, -0.7f, 0.0f, 0.005f, 0.4f, 0.6f, 0.25f, 0.005f, 0.25f, 0.0f, 0.2f, 0, 1.0f},
+    /* Chant: a saw an octave down and a pulse, on "oh", a bigger voice (the formant shift
+     * down: resonance below half), opening slowly towards "ah", with glide (formant) */
+    {{W_SAW, W_PULSE}, {-1, 0}, {-5, 5}, {0.85f, 0.5f}, {0.5f, 0.3f}, F_FORMANT,
+     369, 0.25f, 0.3f, 0.0f, 0.35f, 0.8f, 0.85f, 1.2f, 1.2f, 1.0f, 0.6f, 1.2f, 0.06f, 1.0f},
+    /* Wah: saw and a saw an octave up; each chord's vowel jumps from "oo" to "ah" and falls
+     * back (formant) */
+    {{W_SAW, W_SAW}, {0, 1}, {0, 7}, {0.85f, 0.45f}, {0.5f, 0.5f}, F_FORMANT,
+     130, 0.6f, 1.0f, 0.0f, 0.005f, 0.5f, 0.4f, 0.25f, 0.03f, 0.25f, 0.0f, 0.2f, 0, 1.0f},
 };
 
 /* ---- scales (semitones from the root), in knob order --------------------------------- */
@@ -217,14 +233,20 @@ typedef struct {
     float low3, band3;                  /* formant: the third band's states */
     float ff[3];                        /* formant: the three bands' smoothed g */
     float fa[3][3];                     /* formant: their TPT coefficients */
+    preset_t pr;                        /* the sound it plays (Mutate: this chord's own) */
+    int32_t strumming;                  /* notes still waiting or fading in (Strum) */
+    int32_t delay[NNOTE];               /* Strum: samples before each note starts */
+    float sgain[NNOTE];                 /* Strum: each note's fade-in */
 } slot_t;
 
 typedef struct {
     int8_t note[NNOTE];                 /* low to high, unused -1 */
+    int8_t core[NNOTE];                 /* before Spread and Bass drop (the smooth types' reference) */
     int8_t from[NNOTE];                 /* the chord before it (glide) */
     uint8_t count;
     int8_t root;
     uint8_t preset, has_from;
+    uint8_t opts;                       /* AK_O_* (Strum) */
     float amp;
     int32_t gate;
 } chord_t;
@@ -269,6 +291,7 @@ typedef struct {
     float dgain, dgain_t;               /* the level for DRIVE: now (smoothed), target */
     int32_t prog;                       /* the progression offset of the newest chord */
     int32_t hold;                       /* SOUND_HOLD: the knobs set nothing yet */
+    int8_t vlast[NNOTE];                /* the last chord before Spread and Bass drop */
 } ak_t;
 
 _Static_assert(__builtin_offsetof(ak_t, algo) == OFF_cVoice_algo, "algo");
@@ -408,6 +431,25 @@ static uint8_t waiting[4];
 static uint8_t sound[4][NVAL];          /* a kit's PLAY values, 0-255 */
 static const uint8_t LIMIT[4] = {NPRESET, NCHORD, NSCALE, NROOT};
 
+/* each output's sound and options from the M4 (message "akords-voice"; VOICE RAM, kept
+ * across voice-map rebuilding the arena). Until one arrives, or while the sound is its
+ * preset's own (AK_O_OWN), an output plays its preset. */
+static uint8_t patch[4][AK_PACKED];
+static uint8_t opts[4];
+static uint8_t patch_ok;                /* outputs (bits) with a sound */
+
+/* [output][the sound, 16 bytes][options] */
+void pk_ak_on_voice(const uint8_t *buf, uint32_t len)
+{
+    if (len < 2 + AK_PACKED)
+        return;
+    int v = buf[0] & 3;
+    for (int i = 0; i < AK_PACKED; i++)
+        patch[v][i] = buf[1 + i];
+    opts[v] = buf[1 + AK_PACKED] & (AK_O_ALL | AK_O_OWN);
+    patch_ok |= (uint8_t)(1u << v);
+}
+
 /* each output's DRIVE from the M4 (0-255; message "akords-drive", sent when it changes) */
 static uint8_t drive[4];
 
@@ -492,12 +534,12 @@ static inline float warp(float k, float p)
 
 #define CUT_MIN     100.0f          /* cutoff: 100 Hz (the iOS synth's scale: ~50 Hz) .. 18 kHz; */
 #define CUT_OCT     7.4919f         /* lower, the knob's bottom was silent */
-#define ATT_OCT     11.5507f        /* attack: 1 ms .. 3 s */
 
 static float cutoff_pos(float hz)
 {
     return clampf(log2f_(hz * (1.0f / CUT_MIN)) * (1.0f / CUT_OCT), 0.0f, 1.0f);
 }
+#define ATT_OCT     11.5507f        /* attack: 1 ms .. 3 s */
 
 static float attack_time(const ak_t *a, const preset_t *pr)
 {
@@ -786,6 +828,15 @@ static void make_chord(ak_t *a, chord_t *c, const int8_t *ref, int has_ref)
     if ((type & 1) && has_ref)          /* the "smooth" types (odd positions) */
         (type == CH_POWER_S ? nearest_power : nearest)(ref, n, cnt);
     sort_notes(n, cnt);
+    for (int i = 0; i < NNOTE; i++)
+        c->core[i] = i < cnt ? (int8_t)clampf((float)n[i], 0.0f, 127.0f) : -1;
+    uint8_t o = opts[a->out & 3];
+    if ((o & AK_O_SPREAD) && cnt >= 3)  /* Spread: the second-highest note an octave down */
+        n[cnt - 2] -= 12;
+    if (o & AK_O_DROP)                  /* Bass drop: the lowest (before Spread) an octave down */
+        n[0] -= 12;
+    sort_notes(n, cnt);
+    c->opts = o;
     c->count = (uint8_t)cnt;
     for (int i = 0; i < NNOTE; i++)
         c->note[i] = i < cnt ? (int8_t)clampf((float)n[i], 0.0f, 127.0f) : -1;
@@ -902,9 +953,93 @@ static float count_norm(int cnt)
     return cnt >= 5 ? 0.7746f : (cnt == 4 ? 0.8660f : 1.0f);    /* sqrt(3 / cnt) */
 }
 
+/* a random number 0 .. n - 1 (the notes' detune generator) */
+static int rnd_below(ak_t *a, int n)
+{
+    a->rng = a->rng * 1664525u + 1013904223u;
+    return (int)((a->rng >> 8) % (uint32_t)n);
+}
+
+static void nudge(ak_t *a, uint8_t *f, int i, int d)
+{
+    int lo = i < (int)sizeof AK_MIN ? AK_MIN[i] : 0;
+    int x = (int)f[i] + rnd_below(a, 2 * d + 1) - d;
+    f[i] = (uint8_t)(x < lo ? lo : (x > AK_MAX[i] ? AK_MAX[i] : x));
+}
+
+/* Mutate: a chord's own small variation of the sound (worked out afresh from it each chord,
+ * so it never drifts) */
+static void mutate(ak_t *a, uint8_t *f)
+{
+    nudge(a, f, AK_CUT, 8);
+    if (f[AK_RES])
+        nudge(a, f, AK_RES, 4);
+    nudge(a, f, AK_ENVAMT, 2);
+    nudge(a, f, AK_OSC(0) + AK_DET, 2);
+    nudge(a, f, AK_OSC(1) + AK_DET, 3);
+    nudge(a, f, AK_OSC(1) + AK_LEV, 2);
+    for (int k = 0; k < 2; k++)
+        if (f[AK_OSC(k) + AK_WAVE] == AK_W_PULSE)
+            nudge(a, f, AK_OSC(k) + AK_PW, 2);
+    nudge(a, f, AK_AENV + AK_E_DEC, 1);
+    nudge(a, f, AK_AENV + AK_E_REL, 1);
+    nudge(a, f, AK_FENV + AK_E_DEC, 2);
+    nudge(a, f, AK_FENV + AK_E_SUS, 1);
+}
+
+static float ak_time(uint8_t x)
+{
+    return 0.001f * exp2f_((float)x * 0.2f);
+}
+
+/* the values into the units the voice plays */
+static void decode(const uint8_t *f, preset_t *pr)
+{
+    for (int k = 0; k < 2; k++) {
+        const uint8_t *o = f + AK_OSC(k);
+        pr->wave[k] = o[AK_WAVE];
+        pr->oct[k] = (int8_t)(o[AK_OCT] - 2);
+        pr->detune[k] = (float)((int)o[AK_DET] - AK_MID_DET);
+        pr->level[k] = (float)o[AK_LEV] * (1.0f / 31.0f);
+        pr->pw[k] = (float)o[AK_PW] * (1.0f / 40.0f);
+    }
+    pr->fmode = f[AK_FMODE];
+    pr->cutoff = CUT_MIN * exp2f_((float)f[AK_CUT] * (CUT_OCT / 256.0f));
+    pr->res = (float)f[AK_RES] * 0.01f;
+    pr->env_amt = (float)((int)f[AK_ENVAMT] - AK_MID_ENV) * 0.05f;
+    pr->key_track = (float)f[AK_KEYTRK] * 0.05f;
+    pr->a_att = ak_time(f[AK_AENV + AK_E_ATT]);
+    pr->a_dec = ak_time(f[AK_AENV + AK_E_DEC]);
+    pr->a_sus = (float)f[AK_AENV + AK_E_SUS] * 0.05f;
+    pr->a_rel = ak_time(f[AK_AENV + AK_E_REL]);
+    pr->f_att = ak_time(f[AK_FENV + AK_E_ATT]);
+    pr->f_dec = ak_time(f[AK_FENV + AK_E_DEC]);
+    pr->f_sus = (float)f[AK_FENV + AK_E_SUS] * 0.05f;
+    pr->f_rel = ak_time(f[AK_FENV + AK_E_REL]);
+    pr->glide = (float)f[AK_GLIDE] * 0.01f;
+    pr->gain = 0.5f + (float)f[AK_TRIM] * (1.0f / 62.0f);
+}
+
+#define STRUM_SAMPLES   720         /* Strum: 15 ms between the notes */
+#define STRUM_RAMP      (1.0f / 96.0f)      /* each note fades in over 2 ms (no click) */
+
 static void start_slot(ak_t *a, slot_t *s, const chord_t *c)
 {
-    const preset_t *pr = &PRESETS[c->preset];
+    int out = a->out & 3, own = !(patch_ok >> out & 1) || (c->opts & AK_O_OWN);
+    if (own && !(c->opts & AK_O_MUTATE)) {
+        pk_copy(&s->pr, &PRESETS[c->preset], sizeof s->pr);     /* the preset's own sound, exactly */
+    } else {
+        uint8_t f[AK_NFIELD];
+        if (own)
+            for (int i = 0; i < AK_NFIELD; i++)
+                f[i] = AK_PRESETS[c->preset][i];
+        else
+            ak_unpack(patch[out], f);
+        if (c->opts & AK_O_MUTATE)
+            mutate(a, f);
+        decode(f, &s->pr);
+    }
+    const preset_t *pr = &s->pr;
     int glide = pr->glide > 0.0f && c->has_from;
     for (int i = 0; i < NNOTE; i++)
         s->drift[i] = note_drift(a);
@@ -953,6 +1088,15 @@ static void start_slot(ak_t *a, slot_t *s, const chord_t *c)
     s->steal = 0;
     s->amp = c->amp * pr->gain;
     s->age = ++a->age;
+    s->strumming = 0;
+    if ((c->opts & (AK_O_STRUM_UP | AK_O_STRUM_DOWN)) && c->count > 1) {
+        s->strumming = 1;
+        for (int i = 0; i < c->count; i++) {
+            int order = c->opts & AK_O_STRUM_UP ? i : c->count - 1 - i;
+            s->delay[i] = order * STRUM_SAMPLES;
+            s->sgain[i] = order ? 0.0f : 1.0f;
+        }
+    }
     s->stage = ATTACK;
 }
 
@@ -966,13 +1110,14 @@ static void trigger(cVoice *v)
     a->prog = prog_off[a->out & 3];     /* this chord's place in the progression */
     a->have_prev = a->have_last && any_sounding(a);         /* after a silence: root position */
     for (int i = 0; i < NNOTE; i++)
-        a->prev[i] = a->last[i];
+        a->prev[i] = a->vlast[i];
     chord_t c;
     make_chord(a, &c, a->prev, a->have_prev);
     c.has_from = a->have_last;
     for (int i = 0; i < NNOTE; i++) {
         c.from[i] = a->last[i];
         a->last[i] = c.note[i];
+        a->vlast[i] = c.core[i];
     }
 
     for (int s = 0; s < NSLOT; s++)     /* the chord sounding fades out in STEAL_SAMPLES */
@@ -1015,7 +1160,7 @@ static void follow(ak_t *a)
         if (!t->released)
             t->gate = a->gate_samples;
         if (t->stage != IDLE) {         /* MODE's filter acts on the sounding chords too */
-            uint8_t fm = (uint8_t)(a->fsel >= 0 ? a->fsel : PRESETS[t->preset].fmode);
+            uint8_t fm = (uint8_t)(a->fsel >= 0 ? a->fsel : t->pr.fmode);
             if (fm != t->fmode) {
                 if (fm == F_FORMANT || t->fmode == F_FORMANT)
                     t->low = t->band = t->low2 = t->band2 = t->low3 = t->band3 = 0.0f;
@@ -1023,7 +1168,7 @@ static void follow(ak_t *a)
             }
         }
         if (t->aenv.stage == ATTACK)    /* the attack follows its knob too (from where it is: no click) */
-            adsr_attack(&t->aenv, attack_time(a, &PRESETS[t->preset]), 1.0f);
+            adsr_attack(&t->aenv, attack_time(a, &t->pr), 1.0f);
     }
     slot_t *s = a->newest >= 0 ? &a->slot[a->newest] : 0;
     if (a->newest == -1 || (s && (s->stage == IDLE || s->steal)))
@@ -1036,8 +1181,11 @@ static void follow(ak_t *a)
         a->next.count = c.count;
         a->next.root = c.root;
         a->next.gate = c.gate;
-        for (int i = 0; i < NNOTE; i++)
+        for (int i = 0; i < NNOTE; i++) {
+            a->next.core[i] = c.core[i];
             a->last[i] = c.note[i];
+            a->vlast[i] = c.core[i];
+        }
         return;
     }
     int same = 1;
@@ -1054,9 +1202,11 @@ static void follow(ak_t *a)
             return;
     }
     a->tune_since = -1;
-    for (int i = 0; i < NNOTE; i++)
+    for (int i = 0; i < NNOTE; i++) {
         a->last[i] = c.note[i];
-    const preset_t *pr = &PRESETS[s->preset];
+        a->vlast[i] = c.core[i];
+    }
+    const preset_t *pr = &s->pr;
     for (int i = 0; i < NNOTE; i++) {
         s->note[i] = c.note[i];
         if (i >= c.count)
@@ -1064,8 +1214,11 @@ static void follow(ak_t *a)
         for (int k = 0; k < 2; k++) {
             float ratio = osc_ratio(pr, k) * s->drift[i];
             float to = clampf(mtof((float)c.note[i]) * ratio, 8.0f, 12000.0f) / SR;
-            if (i >= s->count)          /* a note the chord didn't have (a new chord type) */
+            if (i >= s->count) {        /* a note the chord didn't have (a new chord type) */
                 s->osc[i][k].phase = 0.0f;
+                s->delay[i] = 0;
+                s->sgain[i] = 1.0f;
+            }
             s->osc[i][k].target = to;
             if (!s->gliding || i >= s->count)
                 s->osc[i][k].inc = to;
@@ -1082,7 +1235,7 @@ static void init(cVoice *v)
     a->magic = MAGIC;
     a->slot_size = sizeof(slot_t);
     for (int i = 0; i < NNOTE; i++)
-        a->last[i] = a->prev[i] = -1;
+        a->last[i] = a->prev[i] = a->vlast[i] = -1;
     for (int s = 0; s < NSLOT; s++)
         a->slot[s].stage = IDLE;
     a->pending = -1;
@@ -1158,6 +1311,65 @@ INLINE float oscillators(slot_t *s)
     return x * s->norm;
 }
 
+/* one oscillator's sample, and its phase on (Strum's path: a note at a time) */
+INLINE float osc_one(osc_t *o, int wave, float pw)
+{
+    float n = o->phase, dt = o->inc, y;
+    switch (wave) {
+    case W_SAW:
+        y = 2.0f * n - 1.0f - blep(n, dt);
+        break;
+    case W_PULSE: {
+        float q = n - pw;
+        if (q < 0.0f)
+            q += 1.0f;
+        y = (n < pw ? 1.0f : -1.0f) + blep(n, dt) - blep(q, dt);
+        break;
+    }
+    case W_TRI: {
+        float q = n - 0.5f;
+        if (q < 0.0f)
+            q += 1.0f;
+        y = (n < 0.5f ? 4.0f * n - 1.0f : 3.0f - 4.0f * n) - 8.0f * blamp(n, dt) + 8.0f * blamp(q, dt);
+        break;
+    }
+    default:
+        y = fast_sin(n);
+        break;
+    }
+    NEXT(o, n, dt);
+    return y;
+}
+
+/* Strum: the notes start one by one (each still waiting holds its phase at 0), each fading in
+ * over STRUM_RAMP; once all have, the slot goes back to oscillators() */
+static float oscillators_strum(slot_t *s)
+{
+    float x = 0.0f;
+    int busy = 0;
+    for (int i = 0; i < s->count; i++) {
+        if (s->delay[i] > 0) {
+            s->delay[i]--;
+            busy = 1;
+            continue;
+        }
+        float g = s->sgain[i];
+        if (g < 1.0f) {
+            g += STRUM_RAMP;
+            if (g > 1.0f)
+                g = 1.0f;
+            s->sgain[i] = g;
+            busy = 1;
+        }
+        float y = 0.0f;
+        for (int k = 0; k < 2; k++)
+            y += osc_one(&s->osc[i][k], s->wave[k], s->pw[k]) * s->level[k];
+        x += y * g;
+    }
+    s->strumming = busy;
+    return x * s->norm;
+}
+
 /* formant: the vowels PARAM1 sweeps, dark to bright (U O A E I; Peterson & Barney's
  * averages), three bands each, and the bands' levels */
 #define NVOWEL 5
@@ -1187,7 +1399,7 @@ static void slot_coefs(const ak_t *a, slot_t *s)
         float v = clampf(warp(a->val[V_CUTOFF], s->u_cut) + 0.5f * ep, 0.0f, 1.0f) * (NVOWEL - 1);
         /* in resonance's place (ALGO 1): the formant shift, an octave down to an octave up
          * (a bigger to a smaller voice); at 12 o'clock a formant preset's own, else none */
-        float own = PRESETS[s->preset].fmode == F_FORMANT ? s->u_res : 0.5f;
+        float own = s->pr.fmode == F_FORMANT ? s->u_res : 0.5f;
         float shift = exp2f_(2.0f * warp(a->val[V_RES], own) - 1.0f);
         int i = (int)v;
         if (i > NVOWEL - 2)
@@ -1259,7 +1471,7 @@ INLINE float slot_render(const ak_t *a, slot_t *s)
             s->gliding = 0;
         }
     }
-    float x = oscillators(s) * s->in_gain;
+    float x = (s->strumming ? oscillators_strum(s) : oscillators(s)) * s->in_gain;
 
     if (s->fmode == F_FORMANT) {        /* three band-passes in parallel, at the vowel's formants */
         float y = 0.0f;

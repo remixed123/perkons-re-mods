@@ -1,121 +1,102 @@
-# voice-akords
+# AKORDS USER GUIDE
 
-A chord synth voice for the Pērkons: every note plays a chord in your scale, on any of the
-four voices, with synth presets chosen on a settings page of its own. *Akords* is Latvian for "chord". Its sound
-comes from a poly synth I built on iOS: two oscillators per chord note into a resonant filter
-with its own envelope.
+**AKORDS** is a chord synth voice for the Pērkons, on any of its four voices. Every note plays a
+chord in your scale. The name is Latvian for "chord".
+
+* **Chords from one note**: 3 to 5 notes in your scale, from triads to 7ths, 9ths, quartal and
+  power chords.
+* **Smooth chords** take the inversion nearest the chord before, so a sequence moves like a
+  player's hands instead of jumping as a block.
+* **Chord progressions** move the chord on once every cycle of the track: trance, epic,
+  progressive, techno and deep house.
+* **Scale and root**: TUNE plays only the chords of the key you set, in 11 scales and all 12
+  roots.
+* **16 presets**, from bass and pads to stabs, Reese and formant choirs, and **Random** to
+  make new sounds of the same kind. Every sound is saved with the kit.
+* **Strum, Spread and Bass drop** change how the chord is played: notes one after another,
+  a wider voicing, a deeper bass note.
+
+AKORDS takes its sound from a poly synth developed for iOS, reworked to get the most out of the
+incredible-sounding Pērkons: two oscillators per chord note into a resonant filter with its own
+envelope.
 
 Based on official Pērkons firmware **1.3.0**. Unofficial; not affiliated with Erica Synths.
 
 ## Getting it
 
-Build Pērkons firmware with **voice-akords** ticked in the **Mod Matrix**, from your own
-official firmware 1.3.0: follow [Get modded firmware](https://github.com/kiteless/perkons-re#get-modded-firmware)
-in perkons-re. No firmware files are provided here. To remove it, flash the official
+The easiest way is the [Perkons Mod Matrix Desktop](https://github.com/remixed123/modmatrix-desktop#mod-matrix-desktop)
+app for macOS and Windows: nothing else to install. Load your own official firmware 1.3.0,
+tick **AKORDS** and press **PATCH IT**. You can also run the Mod Matrix from perkons-re: follow
+[Get modded firmware](https://github.com/kiteless/perkons-re#get-modded-firmware). No
+firmware files are provided here. To remove it, flash the official
 firmware again.
 
-voice-akords runs as a [voice map](https://github.com/kiteless/perkons-re/blob/main/docs/voice-map.md) engine: in the Mod Matrix, on the
-**ENGINES** tab, install voice-akords. It takes the slot you install
-it in (5 if it's the first).
+AKORDS runs as a voice-map engine: in the Mod Matrix, on the **ENGINES** tab, tick
+**ENABLE CUSTOM VOICE ENGINES**, then install AKORDS. It takes the slot you install it in.
 
 ## Putting it on a voice
 
-On the voice-map engine page (KIT + MOD), press voice-akords' column in the voice's row; its
-next note plays voice-akords. **Hold that step for half a second** to open its
-[settings page](#the-settings-page) for that voice.
-
-## At a glance
-
-```
-settings page: preset, chord type, progression, scale, root
-TUNE (+ progression) ──► chord root in the scale ─┐
-MIDI note ──► transpose ─────────────────────────┤
-                                                 ▼
- 3-5 notes × 2 oscillators (preset) ─► filter (MODE; PARAM1 cutoff, resonance,
-                                       its own envelope)
-     ─► amp envelope (GATE = DECAY) ─► limiter ─► level for DRIVE (±3 dB)
-                                                        │
- the voice's analog stages, as on every voice:          ▼
-     analog filter (CUTOFF, filter switch) ─► DRIVE ─► LEVEL ─► output jack / mix
-                                                 │
-                                                 └─► FX SEND ─► the Pērkons's FX ─► mix
-```
-
-One chord sounds at a time: a new note replaces the one before.
+On the voice-map engine page (hold KIT and press MOD), press AKORDS' column in the voice's row; its next
+note plays AKORDS. **Hold that step for half a second** to open its
+[configuration page](#the-configuration-page) for that voice. The voice's analog filter, DRIVE, FX send
+and level stay with the voice; only the sound engine changes.
 
 ## Controls
 
 | control | what it does |
 |---|---|
-| **TUNE** | the chord's root, stepping through the scale, over four octaves from the root (C2 to C6 with root C) |
-| **DECAY** | **GATE**: how long the chord holds before its release, from about 0.05 s to about 2 s; fully right, the chord drones and never releases on its own |
-| **PARAM1** | filter cutoff (with the formant filter: the vowel) |
-| **PARAM2** | ALGO position 1: resonance (with the formant filter: the formant shift), 2: filter envelope amount, 3: amp attack |
-| **MODE** | the filter: position 1 **24 dB low-pass**, 2 **12 dB high-pass**, 3 **formant** (see below) |
-| CUTOFF, filter switch, DRIVE, FX SEND, LEVEL | the Pērkons's analog stages, exactly as on every voice |
+| **TUNE** | Picks the chord's root. It steps through the notes of the scale and root set on the configuration page, over four octaves (C2 to C6 with root C) |
+| **DECAY** | Works as **GATE**: how long the chord holds before it releases, from 0.05 s to 2 s. From about 95% up, the chord never releases: it **drones** |
+| **PARAM1** | **Filter cutoff** (with the formant filter: the vowel). At 12 o'clock you hear the preset's own; turn left to close the filter, right to open it |
+| **PARAM2** | Its job depends on ALGO (below). At 12 o'clock you hear the preset's own; turn either way from there |
+| **ALGO** | Chooses PARAM2's job (positions top to bottom):<br>1: **resonance** (with the formant filter: the **formant shift**, from an octave lower, a bigger, deeper voice, to an octave higher, a smaller, brighter one)<br>2: **filter envelope amount**<br>3: **amp attack** |
+| **MODE** | Chooses the filter (positions top to bottom):<br>1: **24 dB low-pass**<br>2: **12 dB high-pass**<br>3: **formant**: shapes the chord into a vowel. PARAM1 sweeps it from dark to bright, **U O A E I**, and the filter envelope moves it on each chord |
+| CUTOFF, filter switch, DRIVE, FX SEND, LEVEL | The Pērkons's analog stages, as on every voice. AKORDS gets a little quieter as DRIVE goes up (+3 dB with no drive, -3 dB at full), so DRIVE changes the tone more than the volume |
 
-Switch positions are numbered as in the Pērkons manual's voice tables.
-
-* **The PARAM knobs are relative to the preset.** At 12 o'clock, cutoff, resonance, filter
-  envelope amount and attack are the preset's own; turning left or right takes them to the
-  ends of their range.
-* **When ALGO gives PARAM2 another job**, that setting stays as it was until you move the knob.
-* **Pressing a preset gives you its own sound**, even when it's the one already chosen:
-  cutoff, resonance, filter envelope amount, attack and filter all go back to the preset's,
-  whatever the knobs and MODE say. Each control takes over again when you move it.
+* **One chord sounds at a time**: a new note replaces the one before.
+* **Each preset has its own filter** until you move MODE; then the filter follows the switch.
+* **PARAM2 keeps all three values.** When ALGO gives it another job, that value stays as it was
+  until you move the knob; then the knob sets it.
 * **Turning DECAY down from drone** releases the chord playing.
 
-### The filter (MODE)
+## The configuration page
 
-Each preset has its own filter (see [Presets](#presets-row-1)) until you move MODE; then the
-filter follows the switch.
+Each voice playing AKORDS has its own configuration page. To open it:
 
-**Formant** shapes the chord into a vowel. PARAM1 sweeps the vowel from dark to bright,
-**U O A E I**, and the filter envelope moves it on each chord. On ALGO position 1, PARAM2
-is the **formant shift**: left down to an octave lower (a bigger, deeper voice), right up to
-an octave higher (a smaller, brighter one).
+1. Hold **KIT** and press **MOD** (from any page) to open the voice-map engine page.
+2. Find the voice's row and AKORDS' column (the slot you installed it in).
+3. **Hold** that step for half a second. The configuration page for that voice opens. If
+   the voice wasn't playing AKORDS yet, this also puts it on that voice.
 
-## The settings page
+The trigger keys still play the voices while the page is open, so you can hear every change.
+Press **SHIFT**, **KIT** or **MOD** to go back to the engine page. On each row, the bright
+step is the one chosen.
 
-Each row is one setting; bright is the one chosen.
-
-| row | setting |
-|---|---|
-| 1 | [preset](#presets-row-1) |
-| 2 | [chord type](#chord-types-row-2), steps 1-10; [progression](#progressions-row-2), steps 11-16 |
-| 3 | [scale](#scales-row-3) |
-| 4 | [root](#root-row-4) |
-
-* The trigger keys play the voices, so you can hear changes as you make them.
-* **SHIFT**, **KIT** or **MOD** go back to the engine page.
-* **The settings are kept with the kit**: leaving the page after a change saves them, and the
-  sound as it is then, to the card straight away, as does saving the kit. They're in
-  `BANKS/NN/KITS/PP.KIX`.
+![The configuration page: presets on row 1, chord types and progressions on row 2, scales and Chord FX on row 3, roots and Random on row 4](docs/configuration-page.png)
 
 ### Presets (row 1)
 
-| step | preset | oscillators | filter | sound |
+**Press** a preset step to load that preset. Even on the preset already chosen, a press gives
+you its own sound again: cutoff, resonance, filter envelope amount, attack and filter all go
+back to the preset's, whatever the knobs and MODE say. Each control takes over again when you
+move it.
+
+| step | preset | | step | preset |
 |---|---|---|---|---|
-| 1 | Bass | saw and pulse, an octave down | 24 dB low-pass, fairly low (1.4 kHz), some resonance; a quick filter envelope gives each chord a punchy attack | firm, round low chords |
-| 2 | Pad | two detuned saws | 24 dB low-pass, mellow (2.2 kHz), little resonance; a slow filter envelope opens it over about a second | slow attack and long release: a wash |
-| 3 | Lead | saw and pulse | 24 dB low-pass, bright (4.2 kHz), some resonance | bright and forward, with glide between chords |
-| 4 | Keys | saw and a triangle an octave up | 24 dB low-pass (3.6 kHz), little resonance; the filter closes as the note decays | plucky electric-piano-like chords |
-| 5 | Pluck | two slightly detuned saws | 24 dB low-pass (2.6 kHz), resonant; a strong, fast filter envelope snaps shut | short, no sustain |
-| 6 | Stab | two detuned saws | 24 dB low-pass, low (1.5 kHz), the most resonant preset; a strong, fast filter envelope | short, resonant house and techno stabs |
-| 7 | Hollow | two detuned pulses | 24 dB low-pass (2.8 kHz), gentle, little resonance | reedy and hollow, sustained |
-| 8 | Reese | two saws detuned hard, an octave down | 24 dB low-pass, dark (900 Hz), a little resonance | the drum & bass Reese: thick, beating, with glide |
-| 9 | Organ | triangle and a sine an octave up | 24 dB low-pass, wide open (9 kHz), no resonance, no filter envelope | clean organ chords that hold |
-| 10 | Bell | sine and a triangle, one and two octaves up | 24 dB low-pass, open (6 kHz), no resonance | glassy bells with a long decay |
-| 11 | Air | detuned saw and a pulse an octave up | **12 dB high-pass** (700 Hz): removes the low end; its envelope lowers the cutoff on the attack, letting a little more body through | thin, bright and airy |
-| 12 | Choir | two detuned saws | **formant**, on "ah" | a slow, sung choir |
-| 13 | Vox | pulse and saw | **formant**: each chord's vowel opens from "oh" to "ah" | a vocal "wow" on every chord |
-| 14 | Talk | saw and a saw an octave up | **formant**: each chord's vowel dips from "eh" towards "oh" and back | talking, wah-like chords |
+| 1 | **Bass**: firm, round low chords with a punchy attack | | 9 | **Organ**: clean organ chords that hold |
+| 2 | **Pad**: slow attack and long release, a wash | | 10 | **Bell**: glassy bells with a long decay |
+| 3 | **Lead**: bright and forward, with glide between chords | | 11 | **Air**: thin, bright and airy, through the high-pass filter |
+| 4 | **Keys**: plucky, electric-piano-like chords | | 12 | **Choir**: a slow, sung choir on "ah" (formant) |
+| 5 | **Pluck**: short, no sustain | | 13 | **Vox**: a vocal "wow" on every chord (formant) |
+| 6 | **Stab**: short, resonant house and techno stabs | | 14 | **Talk**: talking, wah-like chords (formant) |
+| 7 | **Hollow**: reedy and hollow, sustained | | 15 | **Chant**: a deep monk choir on "oh", slowly opening towards "ah" (formant) |
+| 8 | **Reese**: two saws detuned hard, thick and beating, with glide | | 16 | **Wah**: every chord says "wah", the vowel jumping open and falling back (formant) |
 
 Glide slides each note of a new chord from the matching note of the chord before.
 
-### Chord types (row 2)
+### Chord types (row 2, steps 1-10)
 
-Steps 1-10 of row 2. Each type comes plain and **smooth**.
+Each type comes plain and **smooth**.
 
 | step | chord | notes |
 |---|---|---|
@@ -130,27 +111,27 @@ Steps 1-10 of row 2. Each type comes plain and **smooth**.
 | 9 | **Power** | root, 5, octave: for bass and Reese |
 | 10 | Power, smooth | |
 
-* **Odd steps play in root position**: the chord moves up and down as a block.
-* **Even steps are smooth**: each chord takes the inversion nearest the chord before it
-  (C → F plays C F A, not F A C), staying within about an octave of TUNE. After a silence it
-  starts again in root position.
+* **Plain types play in root position**: the chord moves up and down as a block.
+* **Smooth types** take the inversion nearest the chord before (C to F plays C F A, not
+  F A C), staying within about an octave of TUNE. After a silence they start again in root
+  position.
 * On pentatonic and blues scales, the diatonic types take the nearest notes the scale has, and
   a sus chord where it has no third. On Chromatic, Diatonic plays major chords, Diatonic 7th
   minor 7ths and Diatonic 9th minor 9ths.
 
-### Progressions (row 2)
+### Progressions (row 2, steps 11-16)
 
-Steps 11-16 of row 2. The chord moves on **once every cycle of the voice's track**: every 16
-steps on a 16-step track, every 9 on a 9-step one.
+The chord moves on **once every cycle of the voice's track**: every 16 steps on a 16-step
+track, every 9 on a 9-step one.
 
 | step | progression | chords | style |
 |---|---|---|---|
 | 11 | **Off** | TUNE alone | |
-| 12 | Trance | i – VI – III – VII | trance and uplifting: Cm, A♭, E♭, B♭ in C minor |
-| 13 | Epic | i – VI – VII – v | epic and cinematic builds: Cm, A♭, B♭, Gm |
-| 14 | Progressive | i – v – VI – iv | progressive house, melodic techno: Cm, Gm, A♭, Fm |
-| 15 | Techno | i – VI | a dark, hypnotic two-chord techno vamp: Cm, A♭ (two notes stay, one moves) |
-| 16 | Deep | i – iv | a two-chord deep house vamp: Cm, Fm |
+| 12 | **Trance** | i – VI – III – VII | trance and uplifting: Cm, A♭, E♭, B♭ in C minor |
+| 13 | **Epic** | i – VI – VII – v | epic and cinematic builds: Cm, A♭, B♭, Gm |
+| 14 | **Progressive** | i – v – VI – iv | progressive house, melodic techno: Cm, Gm, A♭, Fm |
+| 15 | **Techno** | i – VI | a dark, hypnotic two-chord vamp: Cm, A♭ (two notes stay, one moves) |
+| 16 | **Deep** | i – iv | a two-chord deep house vamp: Cm, Fm |
 
 * **TUNE sets the first chord**, and the progression moves from it through the scale.
 * They're written for the **minor scales**. In other scales they take the same scale steps, so
@@ -163,44 +144,75 @@ steps on a 16-step track, every 9 on a 9-step one.
 
 | step | scale | notes from C | character, and where you hear it |
 |---|---|---|---|
-| 1 | Major | C D E F G A B | bright and resolved: pop, house, uplifting trance |
-| 2 | Natural Minor | C D E♭ F G A♭ B♭ | dark and moody: the everyday minor of techno, trance, drum & bass and most dark electronic music |
-| 3 | Minor Pentatonic | C E♭ F G B♭ | five notes with no semitones: rock, blues, funk, hip-hop |
-| 4 | Harmonic Minor | C D E♭ F G A♭ B | minor with a raised 7th that pulls hard back to the root: classical, metal, epic trance, film music |
-| 5 | Dorian | C D E♭ F G A B♭ | minor but warmer, with a bright 6th: deep house, dub techno, funk, soul, jazz |
-| 6 | Phrygian | C D♭ E♭ F G A♭ B♭ | minor with a tense ♭2 a semitone above the root: dark techno, metal, flamenco |
-| 7 | Major Pentatonic | C D E G A | open and sunny, five notes: folk, country, pop, chillout |
-| 8 | Mixolydian | C D E F G A B♭ | major with a bluesy ♭7: rock, funk, disco, Afro house |
-| 9 | Blues | C E♭ F F♯ G B♭ | the minor pentatonic plus the "blue" ♭5: blues, jazz, rock, hip-hop |
+| 1 | **Major** | C D E F G A B | bright and resolved: pop, house, uplifting trance |
+| 2 | **Natural Minor** | C D E♭ F G A♭ B♭ | dark and moody: the everyday minor of techno, trance, drum & bass and most dark electronic music |
+| 3 | **Minor Pentatonic** | C E♭ F G B♭ | five notes with no semitones: rock, blues, funk, hip-hop |
+| 4 | **Harmonic Minor** | C D E♭ F G A♭ B | minor with a raised 7th that pulls hard back to the root: classical, metal, epic trance, film music |
+| 5 | **Dorian** | C D E♭ F G A B♭ | minor but warmer, with a bright 6th: deep house, dub techno, funk, soul, jazz |
+| 6 | **Phrygian** | C D♭ E♭ F G A♭ B♭ | minor with a tense ♭2 a semitone above the root: dark techno, metal, flamenco |
+| 7 | **Major Pentatonic** | C D E G A | open and sunny, five notes: folk, country, pop, chillout |
+| 8 | **Mixolydian** | C D E F G A B♭ | major with a bluesy ♭7: rock, funk, disco, Afro house |
+| 9 | **Blues** | C E♭ F F♯ G B♭ | the minor pentatonic plus the "blue" ♭5: blues, jazz, rock, hip-hop |
 | 10 | **Phrygian Dominant** | C D♭ E F G A♭ B♭ | the Spanish / Middle-Eastern scale of flamenco, psytrance and dark techno. Its chords: C, D♭, E°, Fm, G°, A♭+, B♭m |
-| 11 | Chromatic | all 12 notes | no key: TUNE steps by semitones, for experimental and atonal parts |
+| 11 | **Chromatic** | all 12 notes | no key: TUNE steps by semitones, for experimental and atonal parts |
 
-### Root (row 4)
+### Chord FX (row 3, steps 12-16)
+
+Each step turns its effect on or off for the voice, on its own: press again to turn it off;
+bright is on. Only one strum is on at a time.
+
+| step | effect | what it does |
+|---|---|---|
+| 12 | **Strum up** | the notes start one after another, low to high, 15 ms apart, like a strummed guitar |
+| 13 | **Strum down** | the same, high to low |
+| 14 | **Spread** | opens the chord: the second-highest note plays an octave lower, so the chord spans wider |
+| 15 | **Bass drop** | the chord's lowest note plays an octave lower |
+| 16 | **Mutate** | every chord plays a small variation of the sound: cutoff, resonance, envelopes, detune. Each variation starts from the saved sound, so a pattern keeps moving without drifting away |
+
+* **Strum** suits keys, plucks and stabs. With Strum up on one voice and Strum down on
+  another, playing the same chords, the two answer each other.
+* **Spread and Bass drop** work with every chord type, together or alone, and with the smooth
+  types: the smooth voicing is worked out first, then the notes move.
+
+### Root (row 4, steps 1-12)
 
 | step | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | root | C | C♯ | D | E♭ | E | F | F♯ | G | A♭ | A | B♭ | B |
 
-## Level
+### Random (row 4, steps 13-16)
 
-**The level follows DRIVE**: up to about +3 dB with little or no DRIVE, so a clean chord sits
-with the voices that use DRIVE, and down to about -3 dB at full, to keep full DRIVE from
-overdoing it.
+Random makes a new sound of the current preset's kind (bass, pad, lead, keys, pluck, or
+air and vocal). It changes only the sound: the chord type, progression, scale, root and the
+Chord FX stay as you set them.
+
+| step | Random | what you get |
+|---|---|---|
+| 13 | **Mild** | the preset with every value moved a little |
+| 14 | **Wild** | the preset taken further: waveforms, octaves, detune, filter type, cutoff and envelopes can all change |
+| 15 | **Recipe** | a fresh sound built from a recipe of the preset's kind, such as a Reese, an acid bass, a choir or an organ |
+| 16 | **All** | one of the three, picked at random |
+
+* **Each press is a new sound.** The preset step glows medium while the sound is a Random one.
+* **Hold** a Random step for half a second to undo the last Random.
+* **Press the preset** to go back to its own sound.
+* As with a preset press, the PARAM knobs start again from the new sound's own values: at 12
+  o'clock you hear the sound as Random made it.
+
+## Saving
+
+Each voice's configuration page settings are saved with the kit, including its Chord FX and
+its Random sound, and leaving the page after a change saves them to the card straight away.
+Saving the kit also keeps the sound you made: PARAM2's three values, the filter (the preset's
+own or the one chosen with MODE), and the preset's values after a preset press, for any knob
+you haven't moved since.
+
+A kit saved with an earlier version of AKORDS plays from its knob positions, as it did before,
+until you save it again.
 
 ## MIDI and the sequencer
 
-* **Notes transpose the chord**: note 36 means no change; each note above or below moves the
+* Notes transpose the chord: note 36 means no change, and each note above or below moves the
   whole chord, scale included, by a semitone.
 * Sequenced DECAY values give per-step gate lengths.
 * Parameter locks and MIDI CCs on PARAM2 change whatever ALGO gives it when they play.
-
-## Saved with the kit
-
-Saving a kit keeps the sound you made, on top of the settings page:
-
-* All three PARAM2 values, not only the one ALGO is on.
-* The filter: the preset's own, or the one chosen with MODE.
-* The preset's values after a preset press, for any knob you haven't moved since.
-
-A kit saved with an earlier version of Akords plays from its knob positions, as it did before,
-until you save it again.

@@ -30,10 +30,10 @@ class TestAkordsSettings(AkordsCase):
 
     def test_out_of_range_values_are_0(self):
         e = self.machine()
-        self.settings(e, [[14, 10, 11, 12]] + [[0] * 4] * 3)
+        self.settings(e, [[16, 10, 11, 12]] + [[0] * 4] * 3)
         self.assertEqual(self.info(e)['set'], [0, 0, 0, 0])
-        self.settings(e, [[13, 9, 10, 11]] + [[0] * 4] * 3)
-        self.assertEqual(self.info(e)['set'], [13, 9, 10, 11])
+        self.settings(e, [[15, 9, 10, 11]] + [[0] * 4] * 3)
+        self.assertEqual(self.info(e)["set"], [15, 9, 10, 11])
 
     def test_settings_survive_rebuilding_the_engine(self):
         """voice-map rebuilds an engine when a voice comes back to it: the settings stay."""

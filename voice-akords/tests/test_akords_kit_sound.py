@@ -25,7 +25,7 @@ KEPT, KEPT_MODE, KEPT_CUT_OWN = 0x08, 0x10, 0x20    # the record's flags
 APPLY, HOLD, OWN, ARM2, ARM1 = 0x40, 0x20, 0x10, 0x08, 0x04     # the message's flags
 RES, ENV, ATTACK = 1, 2, 3
 RES_I, ENV_I, ATT_I = 6, 7, 8           # the values in a voice's record
-RECORD = 9
+RECORD = 26                             # a voice in the record (4 x 26)
 _image = {}
 
 
@@ -102,7 +102,7 @@ class TestM4FollowsTheSound(unittest.TestCase):
 
     def record(self, r):
         buf = r.sym.g['json_buf']
-        n = r.e.call(r.cave['pk_ak_kit_save'], 0, 0, buf, 64, max_insns=5_000_000)
+        n = r.e.call(r.cave['pk_ak_kit_save'], 0, 0, buf, 128, max_insns=5_000_000)
         return bytes(r.e.uc.mem_read(buf, n))
 
     def sounds(self, r):

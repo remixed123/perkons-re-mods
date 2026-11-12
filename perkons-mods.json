@@ -48,8 +48,8 @@
   {
    "id": "voice-akords",
    "dir": "voice-akords",
-   "title": "Akords",
-   "summary": "A CHORD SYNTH: EACH NOTE PLAYS A CHORD OF UP TO 5 NOTES IN YOUR SCALE, WITH CHORD PROGRESSIONS, 14 PRESETS AND A SETTINGS PAGE.",
+   "title": "AKORDS",
+   "summary": "A CHORD SYNTH: EACH NOTE PLAYS A CHORD OF UP TO 5 NOTES IN YOUR SCALE, WITH CHORD PROGRESSIONS, 16 PRESETS AND A SETTINGS PAGE.",
    "readme": "voice-akords/README.md",
    "patches": [
     "voice_akords"
@@ -65,12 +65,39 @@
       "voice": {
        "remixed123/perkons-re-mods:voice-akords/src/m7/akords.c:.bss.prog_off": 4,
        "remixed123/perkons-re-mods:voice-akords/src/m7/akords.c:.bss.drive": 4,
+       "remixed123/perkons-re-mods:voice-akords/src/m7/akords.c:.bss.patch_ok": 1,
+       "remixed123/perkons-re-mods:voice-akords/src/m7/akords.c:.bss.opts": 4,
+       "remixed123/perkons-re-mods:voice-akords/src/m7/akords.c:.bss.patch": 64,
        "remixed123/perkons-re-mods:voice-akords/src/m7/akords.c:.bss.sound": 16,
        "remixed123/perkons-re-mods:voice-akords/src/m7/akords.c:.bss.waiting": 4,
        "remixed123/perkons-re-mods:voice-akords/src/m7/akords.c:.bss.settings": 16
       },
-      "store": {
-       "remixed123/perkons-re-mods:voice-akords/src/m4/akords_m4.c:.pk_axi": 1624
+      "main": {
+       "remixed123/perkons-re-mods:voice-akords/src/m4/akords_m4.c:.bss.prog_pattern": 4,
+       "remixed123/perkons-re-mods:voice-akords/src/m4/akords_m4.c:.bss.prog_playing": 4,
+       "remixed123/perkons-re-mods:voice-akords/src/m4/akords_m4.c:.bss.prog_sent": 4,
+       "remixed123/perkons-re-mods:voice-akords/src/m4/akords_m4.c:.bss.prog_cycle": 4,
+       "remixed123/perkons-re-mods:voice-akords/src/m4/akords_m4.c:.bss.prog_step": 8,
+       "remixed123/perkons-re-mods:voice-akords/src/m4/akords_m4.c:.bss.drive_at": 4,
+       "remixed123/perkons-re-mods:voice-akords/src/m4/akords_m4.c:.bss.drive_checked": 4,
+       "remixed123/perkons-re-mods:voice-akords/src/m4/akords_m4.c:.bss.drive_sent": 4,
+       "remixed123/perkons-re-mods:voice-akords/src/m4/akords_m4.c:.bss.key_done": 4,
+       "remixed123/perkons-re-mods:voice-akords/src/m4/akords_m4.c:.bss.key_at": 4,
+       "remixed123/perkons-re-mods:voice-akords/src/m4/akords_m4.c:.bss.key_held": 4,
+       "remixed123/perkons-re-mods:voice-akords/src/m4/akords_m4.c:.bss.rng": 4,
+       "remixed123/perkons-re-mods:voice-akords/src/m4/akords_m4.c:.bss.ready": 4,
+       "remixed123/perkons-re-mods:voice-akords/src/m4/akords_m4.c:.bss.undo_ok": 4,
+       "remixed123/perkons-re-mods:voice-akords/src/m4/akords_m4.c:.bss.undo_opt": 4,
+       "remixed123/perkons-re-mods:voice-akords/src/m4/akords_m4.c:.bss.undo_snd": 64,
+       "remixed123/perkons-re-mods:voice-akords/src/m4/akords_m4.c:.bss.opt": 4,
+       "remixed123/perkons-re-mods:voice-akords/src/m4/akords_m4.c:.bss.voice_snd": 64,
+       "remixed123/perkons-re-mods:voice-akords/src/m4/akords_m4.c:.bss.editing": 4,
+       "remixed123/perkons-re-mods:voice-akords/src/m4/akords_m4.c:.bss.cur": 20,
+       "remixed123/perkons-re-mods:voice-akords/src/m4/akords_m4.c:.bss.holding": 4,
+       "remixed123/perkons-re-mods:voice-akords/src/m4/akords_m4.c:.bss.hold_matched": 4,
+       "remixed123/perkons-re-mods:voice-akords/src/m4/akords_m4.c:.bss.hold_from": 4,
+       "remixed123/perkons-re-mods:voice-akords/src/m4/akords_m4.c:.bss.snd": 32,
+       "remixed123/perkons-re-mods:voice-akords/src/m4/akords_m4.c:.bss.kit_set": 5888
       }
      },
      "takeovers": {},
