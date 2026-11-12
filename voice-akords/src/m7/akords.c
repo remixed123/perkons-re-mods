@@ -21,7 +21,8 @@
  * kit): the ordered message "akords", 4 voices x 4 bytes, kept here per output (an
  * engine rebuilt by voice-map finds them again). So does each voice's sound (message
  * "akords-voice": the preset's own, played from PRESETS exactly, or one Random made, as
- * ak_sound.h's values) and its options: Strum (the notes start 15 ms apart, up or down),
+ * ak_sound.h's values) and its options: Strum (the notes start 45 ms apart, up or down,
+ * the envelopes holding their peak until the last is in),
  * Spread (the second-highest note an octave down), Bass drop (the lowest an octave down)
  * and Mutate (each chord a small variation of the sound). Each voice's DRIVE comes from the M4 too
  * (message "akords-drive"): the level follows it (DRIVE_BOOST_DB / DRIVE_CUT_DB). And the
@@ -234,7 +235,9 @@ typedef struct {
     float ff[3];                        /* formant: the three bands' smoothed g */
     float fa[3][3];                     /* formant: their TPT coefficients */
     preset_t pr;                        /* the sound it plays (Mutate: this chord's own) */
-    int32_t strumming;                  /* notes still waiting or fading in (Strum) */
+    int32_t strumming;                  /* notes still waiting or fading in (Strum): the
+                                           envelopes hold at their peak meanwhile */
+    int32_t strum_len;                  /* Strum: samples until the last note (the gate waits) */
     int32_t delay[NNOTE];               /* Strum: samples before each note starts */
     float sgain[NNOTE];                 /* Strum: each note's fade-in */
 } slot_t;
@@ -967,24 +970,25 @@ static void nudge(ak_t *a, uint8_t *f, int i, int d)
     f[i] = (uint8_t)(x < lo ? lo : (x > AK_MAX[i] ? AK_MAX[i] : x));
 }
 
-/* Mutate: a chord's own small variation of the sound (worked out afresh from it each chord,
+#define MUTATE_CUT      24          /* Mutate: the cutoff's reach (of 256 = 7.49 octaves) */
+
+/* Mutate: a chord's own variation of the sound (worked out afresh from it each chord,
  * so it never drifts) */
 static void mutate(ak_t *a, uint8_t *f)
 {
-    nudge(a, f, AK_CUT, 8);
-    if (f[AK_RES])
-        nudge(a, f, AK_RES, 4);
-    nudge(a, f, AK_ENVAMT, 2);
-    nudge(a, f, AK_OSC(0) + AK_DET, 2);
-    nudge(a, f, AK_OSC(1) + AK_DET, 3);
-    nudge(a, f, AK_OSC(1) + AK_LEV, 2);
+    nudge(a, f, AK_CUT, MUTATE_CUT);    /* up to ~0.7 octave either way */
+    nudge(a, f, AK_RES, 12);
+    nudge(a, f, AK_ENVAMT, 5);
+    nudge(a, f, AK_OSC(0) + AK_DET, 5);
+    nudge(a, f, AK_OSC(1) + AK_DET, 6);
+    nudge(a, f, AK_OSC(1) + AK_LEV, 5);
     for (int k = 0; k < 2; k++)
         if (f[AK_OSC(k) + AK_WAVE] == AK_W_PULSE)
-            nudge(a, f, AK_OSC(k) + AK_PW, 2);
-    nudge(a, f, AK_AENV + AK_E_DEC, 1);
-    nudge(a, f, AK_AENV + AK_E_REL, 1);
-    nudge(a, f, AK_FENV + AK_E_DEC, 2);
-    nudge(a, f, AK_FENV + AK_E_SUS, 1);
+            nudge(a, f, AK_OSC(k) + AK_PW, 4);
+    nudge(a, f, AK_AENV + AK_E_DEC, 3);
+    nudge(a, f, AK_AENV + AK_E_REL, 3);
+    nudge(a, f, AK_FENV + AK_E_DEC, 4);
+    nudge(a, f, AK_FENV + AK_E_SUS, 3);
 }
 
 static float ak_time(uint8_t x)
@@ -1020,7 +1024,7 @@ static void decode(const uint8_t *f, preset_t *pr)
     pr->gain = 0.5f + (float)f[AK_TRIM] * (1.0f / 62.0f);
 }
 
-#define STRUM_SAMPLES   720         /* Strum: 15 ms between the notes */
+#define STRUM_SAMPLES   2160        /* Strum: 45 ms between the notes */
 #define STRUM_RAMP      (1.0f / 96.0f)      /* each note fades in over 2 ms (no click) */
 
 static void start_slot(ak_t *a, slot_t *s, const chord_t *c)
@@ -1089,8 +1093,10 @@ static void start_slot(ak_t *a, slot_t *s, const chord_t *c)
     s->amp = c->amp * pr->gain;
     s->age = ++a->age;
     s->strumming = 0;
+    s->strum_len = 0;
     if ((c->opts & (AK_O_STRUM_UP | AK_O_STRUM_DOWN)) && c->count > 1) {
         s->strumming = 1;
+        s->strum_len = (c->count - 1) * STRUM_SAMPLES;
         for (int i = 0; i < c->count; i++) {
             int order = c->opts & AK_O_STRUM_UP ? i : c->count - 1 - i;
             s->delay[i] = order * STRUM_SAMPLES;
@@ -1381,7 +1387,7 @@ static const float BAND_LEVEL[3] = {1.0f, 0.63f, 0.35f};
 /* the slot's filter coefficients and filter envelope, every COEF_EVERY samples */
 static void slot_coefs(const ak_t *a, slot_t *s)
 {
-    float fe = adsr_step(&s->fenv);
+    float fe = s->strumming && s->fenv.stage == DECAY ? s->fenv.lvl : adsr_step(&s->fenv);
     float ep = fe * (2.0f * warp(a->val[V_ENV], s->u_env) - 1.0f);
     float scale = ep >= 0.0f ? 1.0f + ep * 10.0f : (1.0f + ep > 0.05f ? 1.0f + ep : 0.05f);
     float cut = CUT_MIN * exp2f_(warp(a->val[V_CUTOFF], s->u_cut) * CUT_OCT);
@@ -1447,7 +1453,7 @@ INLINE float slot_out(slot_t *s, float y)
 
 INLINE float slot_render(const ak_t *a, slot_t *s)
 {
-    if (!s->released && s->gate >= 0 && s->elapsed >= s->gate) {
+    if (!s->released && s->gate >= 0 && s->elapsed >= s->gate + s->strum_len) {
         s->released = 1;
         adsr_release(&s->aenv);
         adsr_release(&s->fenv);
@@ -1457,7 +1463,9 @@ INLINE float slot_render(const ak_t *a, slot_t *s)
         s->coef_age = COEF_EVERY - 1;
         slot_coefs(a, s);
     }
-    float env = adsr_step(&s->aenv);
+    /* strumming: the envelope holds at its peak until the last note is in, so it isn't
+     * already falling when the later notes start */
+    float env = s->strumming && s->aenv.stage == DECAY ? s->aenv.lvl : adsr_step(&s->aenv);
     s->stage = s->aenv.stage;
 
     if (s->gliding) {

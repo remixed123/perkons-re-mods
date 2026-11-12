@@ -306,7 +306,7 @@ class TestVoiceSound(AkordsCase):
         f[S.WAVE], f[S.OSC_N + S.LEV] = S.W_SINE, 0
         f[S.CUT], f[S.ENVAMT] = 255, 20
         self.voice(e, f, opts)
-        x = self.play(e, tune_for(21, MAJOR), n=4800)
+        x = self.play(e, tune_for(21, MAJOR), n=9600)
         notes = model_chord(21, chord='power')
         w = 480                                                 # 10 ms windows, every 5 ms
 
@@ -319,10 +319,22 @@ class TestVoiceSound(AkordsCase):
         lo, hi = self.strum_onsets(0)
         up_lo, up_hi = self.strum_onsets(S.O_STRUM_UP)
         self.assertEqual(up_lo, lo, 'up: the lowest note first')
-        self.assertGreaterEqual(up_hi - hi, 25, 'up: the top note ~30 ms later')
+        self.assertGreaterEqual(up_hi - hi, 80, 'up: the top note ~90 ms later')
         down_lo, down_hi = self.strum_onsets(S.O_STRUM_DOWN)
         self.assertEqual(down_hi, hi, 'down: the top note first')
-        self.assertGreaterEqual(down_lo - lo, 25, 'down: the lowest ~30 ms later')
+        self.assertGreaterEqual(down_lo - lo, 80, 'down: the lowest ~90 ms later')
+
+    def test_strum_holds_the_envelope_until_the_last_note(self):
+        """Pluck (no sustain): the last note of a strummed chord is as loud as the first."""
+        e = self.machine(preset=4, chord='power')
+        f = list(S.PRESET_FIELDS[4])
+        f[S.WAVE], f[S.OSC_N + S.LEV], f[S.CUT], f[S.ENVAMT] = S.W_SINE, 0, 255, 20
+        self.voice(e, f, S.O_STRUM_UP)
+        x = self.play(e, tune_for(21, MAJOR), n=9600)
+        lo, hi = (note_hz(n) for n in (model_chord(21, chord='power')[0], model_chord(21, chord='power')[-1]))
+        first = goertzel(x[480:1440], lo) ** .5                 # 10-30 ms: the first note
+        last = goertzel(x[4800:5760], hi) ** .5                 # 100-120 ms: the last, just in
+        self.assertGreater(last, 0.6 * first)
 
     def test_strum_doesnt_click(self):
         e = self.machine(preset=4)                              # Pluck: saws
@@ -357,7 +369,8 @@ class TestVoiceSound(AkordsCase):
         got = self.cutoffs(S.O_MUTATE)
         self.assertGreaterEqual(len(set(got)), 4, got)
         steps = [math.log2(x / 100) / 7.4919 * 256 - 152 for x in got]
-        self.assertTrue(all(abs(d) <= 8.01 for d in steps), ('small, from the saved sound each time', steps))
+        self.assertTrue(all(abs(d) <= 24.01 for d in steps), ('from the saved sound each time', steps))
+        self.assertGreater(max(steps) - min(steps), 16, ('clearly heard', steps))
 
     def test_strum_stays_within_the_cpu_budget(self):
         """While the notes start (a 5-note chord: ~60 ms), against a stock voice."""

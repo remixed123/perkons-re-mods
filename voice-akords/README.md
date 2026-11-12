@@ -163,11 +163,11 @@ bright is on. Only one strum is on at a time.
 
 | step | effect | what it does |
 |---|---|---|
-| 12 | **Strum up** | the notes start one after another, low to high, 15 ms apart, like a strummed guitar |
+| 12 | **Strum up** | the notes start one after another, low to high, 45 ms apart, like a strummed guitar. The chord holds at full level until its last note is in |
 | 13 | **Strum down** | the same, high to low |
 | 14 | **Spread** | opens the chord: the second-highest note plays an octave lower, so the chord spans wider |
 | 15 | **Bass drop** | the chord's lowest note plays an octave lower |
-| 16 | **Mutate** | every chord plays a small variation of the sound: cutoff, resonance, envelopes, detune. Each variation starts from the saved sound, so a pattern keeps moving without drifting away |
+| 16 | **Mutate** | every chord plays a variation of the sound: cutoff (up to most of an octave either way), resonance, envelopes, detune, level. Each variation starts from the saved sound, so a pattern keeps moving without drifting away |
 
 * **Strum** suits keys, plucks and stabs. With Strum up on one voice and Strum down on
   another, playing the same chords, the two answer each other.
