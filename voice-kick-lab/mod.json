@@ -1,0 +1,14 @@
+{
+  "options": [
+    {
+      "id": "voice-kick-lab",
+      "title": "KICK LAB",
+      "summary": "KICKS FROM SOLID AND CLEAN TO DIRTY, DISTORTED TEXTURE: SOFT, HARD, CRUSH AND FOLD DRIVE, A SYNCED DELAY, 16 PRESETS. HOLD ITS STEP ON THE ENGINE PAGE FOR SETTINGS.",
+      "patches": [
+        "voice_kick_lab"
+      ],
+      "code": "kl",
+      "kind": "voice"
+    }
+  ]
+}
