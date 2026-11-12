@@ -1,0 +1,14 @@
+{
+  "options": [
+    {
+      "id": "voice-synth-lab",
+      "title": "SYNTH LAB",
+      "summary": "A MONO SYNTH: THREE OSCILLATORS WITH HARD SYNC, A WAVEFOLDER, A FILTER WITH ITS OWN ENVELOPE, EIGHT LFOS, 16 PRESETS, RANDOM, TWEAK AND MUTATE. HOLD ITS STEP ON THE ENGINE PAGE FOR ITS CONFIGURATION PAGE.",
+      "patches": [
+        "voice_synth_lab"
+      ],
+      "code": "sy",
+      "kind": "voice"
+    }
+  ]
+}
