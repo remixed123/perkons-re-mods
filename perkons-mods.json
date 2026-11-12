@@ -1,41 +1,8 @@
 {
  "format": 1,
  "repo": "remixed123/perkons-re-mods",
- "description": "Akords, a chord synth voice, and FX Sidechain, kick-style pumping, for the Perkons HD-01",
+ "description": "Akords, a chord synth voice, Kick Lab, a kick drum synth voice, and FX Sidechain, kick-style pumping, for the Perkons HD-01",
  "mods": [
-  {
-   "id": "voice-akords",
-   "dir": "voice-akords",
-   "title": "Akords",
-   "summary": "A CHORD SYNTH: EACH NOTE PLAYS A CHORD OF UP TO 5 NOTES IN YOUR SCALE, WITH CHORD PROGRESSIONS, 14 PRESETS AND A SETTINGS PAGE.",
-   "readme": "voice-akords/README.md",
-   "patches": [
-    "voice_akords"
-   ],
-   "code": "ak",
-   "kind": "voice",
-   "requires": [],
-   "conflicts": [],
-   "target": "1.3.0",
-   "memory": {
-    "v1.3.0": {
-     "ram": {
-      "voice": {
-       "remixed123/perkons-re-mods:voice-akords/src/m7/akords.c:.bss.prog_off": 4,
-       "remixed123/perkons-re-mods:voice-akords/src/m7/akords.c:.bss.drive": 4,
-       "remixed123/perkons-re-mods:voice-akords/src/m7/akords.c:.bss.sound": 16,
-       "remixed123/perkons-re-mods:voice-akords/src/m7/akords.c:.bss.waiting": 4,
-       "remixed123/perkons-re-mods:voice-akords/src/m7/akords.c:.bss.settings": 16
-      },
-      "store": {
-       "remixed123/perkons-re-mods:voice-akords/src/m4/akords_m4.c:.pk_axi": 1624
-      }
-     },
-     "takeovers": {},
-     "borrows": {}
-    }
-   }
-  },
   {
    "id": "fx-sidechain",
    "dir": "fx-sidechain",
@@ -71,6 +38,81 @@
        "remixed123/perkons-re-mods:fx-sidechain/src/m4/sidechain_m4.c:.bss.sync_down": 1,
        "remixed123/perkons-re-mods:fx-sidechain/src/m4/sidechain_m4.c:.bss.cur": 6,
        "remixed123/perkons-re-mods:fx-sidechain/src/m4/sidechain_m4.c:.bss.kit_tab": 256
+      }
+     },
+     "takeovers": {},
+     "borrows": {}
+    }
+   }
+  },
+  {
+   "id": "voice-akords",
+   "dir": "voice-akords",
+   "title": "Akords",
+   "summary": "A CHORD SYNTH: EACH NOTE PLAYS A CHORD OF UP TO 5 NOTES IN YOUR SCALE, WITH CHORD PROGRESSIONS, 14 PRESETS AND A SETTINGS PAGE.",
+   "readme": "voice-akords/README.md",
+   "patches": [
+    "voice_akords"
+   ],
+   "code": "ak",
+   "kind": "voice",
+   "requires": [],
+   "conflicts": [],
+   "target": "1.3.0",
+   "memory": {
+    "v1.3.0": {
+     "ram": {
+      "voice": {
+       "remixed123/perkons-re-mods:voice-akords/src/m7/akords.c:.bss.prog_off": 4,
+       "remixed123/perkons-re-mods:voice-akords/src/m7/akords.c:.bss.drive": 4,
+       "remixed123/perkons-re-mods:voice-akords/src/m7/akords.c:.bss.sound": 16,
+       "remixed123/perkons-re-mods:voice-akords/src/m7/akords.c:.bss.waiting": 4,
+       "remixed123/perkons-re-mods:voice-akords/src/m7/akords.c:.bss.settings": 16
+      },
+      "store": {
+       "remixed123/perkons-re-mods:voice-akords/src/m4/akords_m4.c:.pk_axi": 1624
+      }
+     },
+     "takeovers": {},
+     "borrows": {}
+    }
+   }
+  },
+  {
+   "id": "voice-kick-lab",
+   "dir": "voice-kick-lab",
+   "title": "KICK LAB",
+   "summary": "KICKS FROM SOLID AND CLEAN TO DIRTY, DISTORTED TEXTURE: SOFT, HARD, CRUSH AND FOLD DRIVE, A SYNCED DELAY, 16 PRESETS. HOLD ITS STEP ON THE ENGINE PAGE FOR SETTINGS.",
+   "readme": "voice-kick-lab/README.md",
+   "patches": [
+    "voice_kick_lab"
+   ],
+   "code": "kl",
+   "kind": "voice",
+   "requires": [],
+   "conflicts": [],
+   "target": "1.3.0",
+   "memory": {
+    "v1.3.0": {
+     "ram": {
+      "voice": {
+       "remixed123/perkons-re-mods:voice-kick-lab/src/m7/kick_lab.c:.bss.bpm": 4,
+       "remixed123/perkons-re-mods:voice-kick-lab/src/m7/kick_lab.c:.bss.pending": 4,
+       "remixed123/perkons-re-mods:voice-kick-lab/src/m7/kick_lab.c:.bss.sets": 24
+      },
+      "main": {
+       "remixed123/perkons-re-mods:voice-kick-lab/src/m4/kick_lab_m4.c:.bss.tempo_at": 4,
+       "remixed123/perkons-re-mods:voice-kick-lab/src/m4/kick_lab_m4.c:.bss.tempo_checked": 4,
+       "remixed123/perkons-re-mods:voice-kick-lab/src/m4/kick_lab_m4.c:.bss.tempo_sent": 4,
+       "remixed123/perkons-re-mods:voice-kick-lab/src/m4/kick_lab_m4.c:.bss.holding": 4,
+       "remixed123/perkons-re-mods:voice-kick-lab/src/m4/kick_lab_m4.c:.bss.hold_matched": 4,
+       "remixed123/perkons-re-mods:voice-kick-lab/src/m4/kick_lab_m4.c:.bss.hold_from": 4,
+       "remixed123/perkons-re-mods:voice-kick-lab/src/m4/kick_lab_m4.c:.bss.kit_ok": 8,
+       "remixed123/perkons-re-mods:voice-kick-lab/src/m4/kick_lab_m4.c:.bss.ready": 4,
+       "remixed123/perkons-re-mods:voice-kick-lab/src/m4/kick_lab_m4.c:.bss.editing": 4,
+       "remixed123/perkons-re-mods:voice-kick-lab/src/m4/kick_lab_m4.c:.bss.fol": 24,
+       "remixed123/perkons-re-mods:voice-kick-lab/src/m4/kick_lab_m4.c:.bss.cur": 24,
+       "remixed123/perkons-re-mods:voice-kick-lab/src/m4/kick_lab_m4.c:.bss.kit_set": 1536
       }
      },
      "takeovers": {},
