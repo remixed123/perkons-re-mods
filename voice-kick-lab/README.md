@@ -102,6 +102,9 @@ the waveform, the saturation, how the pitch falls, the resonant body and the rum
   60 BPM (three seconds) is a low thud.
 * **The tone** (row 3, steps 11-16) darkens the echoes further, each repeat more than the one
   before.
+* **High feedback stays at about the kick's own level**: as the feedback goes up, the echoes
+  start a little quieter, so the repeats piling up between hits don't make the kick louder
+  and louder. The repeats, their spacing and how long they ring on are the same.
 
 ### The drive (row 4)
 

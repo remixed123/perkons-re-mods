@@ -71,6 +71,10 @@ static const float TIME_S[NTIME] = {0.015f, 0.025f, 0.04f, 0.06f, 0.08f, 0.1f, 0
 static const float DIV_BEATS[NTIME] = {0.0625f, 0.125f, 1.0f / 6, 0.25f, 0.375f, 1.0f / 3, 0.5f, 0.75f,
                                        2.0f / 3, 1.0f, 1.5f, 4.0f / 3, 2.0f, 3.0f};
 #define NFB             10          /* feedback 0 .. 0.9 */
+/* the level into the line for each feedback: the echoes pile up between hits as the feedback
+ * rises, so the line's input is turned down to keep the delay's level near the kick's own
+ * (the repeats, their spacing and their decay unchanged; the line stays below clipping) */
+static const float DL_IN_G[NFB] = {1.000f, 0.992f, 0.970f, 0.932f, 0.877f, 0.806f, 0.716f, 0.604f, 0.465f, 0.288f};
 #define NDTONE          6           /* delay tone 0 .. 1 */
 #define NDAMT           9           /* drive amount 1/9 .. 1 */
 static const float DRV_TONE[3] = {0.25f, 0.5f, 0.75f};
@@ -243,6 +247,7 @@ typedef struct {
     int32_t xfading;
     float lp, tone_c;                   /* digital tone low-pass at the line's rate */
     float fb;
+    float in_g;                         /* DL_IN_G for the feedback */
     float prev, cur;                    /* the last two outputs (linear interpolation up) */
     float gain, gain_to;                /* fades for a band change */
     int32_t quiet;                      /* line steps without signal */
@@ -569,6 +574,7 @@ static void delay_set(kl_t *k)
     if (k->page.dl_tone == NDTONE - 1)
         dl->tone_c = 1.0f;                      /* fully open: no low-pass */
     dl->fb = (float)k->page.dl_fb * 0.1f;
+    dl->in_g = DL_IN_G[k->page.dl_fb];
 }
 
 /* the line `t` line samples back (linear interpolation) */
@@ -627,7 +633,7 @@ static float delay_run(kl_t *k, float x)
             rd += dl->xf * (delay_tap(dl, dl->t_new) - rd);
         dl->lp += dl->tone_c * (rd - dl->lp);
         float wet = dl->lp * dl->gain;
-        dl->buf[dl->w] = to_line(in + wet * dl->fb);
+        dl->buf[dl->w] = to_line(in * dl->in_g + wet * dl->fb);
         if (++dl->w >= DL_LEN)
             dl->w = 0;
         dl->prev = dl->cur;
