@@ -13,7 +13,9 @@ chord in your scale. The name is Latvian for "chord".
   roots.
 * **Three filters**: 24 dB low-pass, 12 dB high-pass and a formant filter that sings vowels.
   PARAM1 sweeps the cutoff (on the formant, the vowel). PARAM2 sets the resonance, which on
-  the formant becomes the formant shift, from a bigger voice to a smaller one.
+  the formant becomes the formant shift, from a bigger voice to a smaller one. Pushed hard,
+  cutoff and resonance up, the filter saturates like an analog one, warm up to a scream,
+  instead of clipping.
 * **16 presets**, from bass and pads to stabs, Reese and formant choirs, and **Random** to
   make new sounds of the same kind. Every sound is saved with the kit.
 * **Strum, Spread and Bass drop** change how the chord is played: notes one after another,

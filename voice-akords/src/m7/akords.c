@@ -52,8 +52,13 @@
 #define MOVED           (82.0f / 4095.0f)   /* knob travel (2%) that hands it a new job */
 #define LEVEL           8000.0f     /* peak scale, as the stock tonal voices */
 #define MIX             (LEVEL * 0.3f)      /* per-slot output scale (3 notes, 2 oscillators) */
-#define LIM_THR         9000.0f     /* the output limiter: peaks held at this (Zibens ~8500), */
-#define LIM_REL         0.999861f   /* instant attack, 150 ms release */
+#define LIM_THR         9000.0f     /* the output limiter: peaks held near this (Zibens ~8500), */
+#define LIM_ATT         0.067f      /* 0.3 ms attack (no instant grab: it would square the peaks) */
+#define LIM_REL         0.999861f   /* 150 ms release */
+#define CLIP_KNEE       8500.0f     /* after the limiter, a soft clip rounds what its attack lets */
+#define CLIP_CEIL       10000.0f    /*   through: untouched below the knee, never above the ceiling */
+#define F_KNEE          7.0f        /* the filter's states: untouched below this, then bent */
+#define F_CEIL          10.0f       /*   smoothly towards this (saturation, not a hard clip) */
 #define DC_R            0.9995f     /* DC blocker pole (~4 Hz) */
 #define FORMANT_Q       0.08f       /* formant bands: damping (Q 12.5) */
 #define FORMANT_GAIN    5.0f        /* formant level trim: peaks near the presets */
@@ -319,6 +324,18 @@ _Static_assert(sizeof(ak_t) <= 0x4000, "fits a voice-map arena");
 INLINE float clampf(float x, float lo, float hi)
 {
     return x < lo ? lo : (x > hi ? hi : x);
+}
+
+/* a soft knee: x below `knee` unchanged, above it bent towards `ceil` (never reached), with
+ * no corner at the knee (the slope runs on from 1), so a hot signal is rounded, not squared */
+INLINE float soft_knee(float x, float knee, float ceil)
+{
+    float m = x < 0.0f ? -x : x;
+    if (m <= knee)
+        return x;
+    float r = ceil - knee, u = (m - knee) / r;
+    float y = knee + r * u / (1.0f + u);
+    return x < 0.0f ? -y : y;
 }
 
 INLINE float absf(float x)
@@ -1489,17 +1506,18 @@ INLINE float slot_render(const ak_t *a, slot_t *s)
         return slot_out(s, y * FORMANT_Q * FORMANT_GAIN * env * s->amp);
     }
 
-    /* the iOS synth's state-variable filter (Chamberlin), its states clipped at +-10 (the edge it
-     * gets pushed hard): 12 dB high-pass, or two stages for 24 dB low-pass */
+    /* the iOS synth's state-variable filter (Chamberlin), its states held below +-10 (the edge
+     * high resonance pushes it to) by a soft knee: it saturates there instead of clipping
+     * inside its loop (a crackle): 12 dB high-pass, or two stages for 24 dB low-pass */
     float f = s->f, q = s->q;
-    s->low = clampf(s->low + f * s->band, -10.0f, 10.0f);
+    s->low = soft_knee(s->low + f * s->band, F_KNEE, F_CEIL);
     float high = x - s->low - q * s->band;
-    s->band = clampf(s->band + f * high, -10.0f, 10.0f);
+    s->band = soft_knee(s->band + f * high, F_KNEE, F_CEIL);
     if (s->fmode == F_HP12)
         return slot_out(s, high * env * s->amp);
-    s->low2 = clampf(s->low2 + f * s->band2, -10.0f, 10.0f);      /* LP24: a second stage */
+    s->low2 = soft_knee(s->low2 + f * s->band2, F_KNEE, F_CEIL);  /* LP24: a second stage */
     float high2 = s->low - s->low2 - q * s->band2;
-    s->band2 = clampf(s->band2 + f * high2, -10.0f, 10.0f);
+    s->band2 = soft_knee(s->band2 + f * high2, F_KNEE, F_CEIL);
     return slot_out(s, s->low2 * env * s->amp);
 }
 
@@ -1524,15 +1542,16 @@ static int16_t render(cVoice *v)
         }
         y += slot_render(a, s);
     }
-    /* DC blocker (the pulse oscillators' offset), then the limiter: the last stage */
+    /* DC blocker (the pulse oscillators' offset), then the limiter and the soft clip */
     y *= MIX;
     float d = y - a->dc_x + DC_R * a->dc_y;
     a->dc_x = y;
     a->dc_y = d;
     float m = absf(d);
-    a->lim = m > a->lim ? m : a->lim * LIM_REL;
+    a->lim = m > a->lim ? a->lim + (m - a->lim) * LIM_ATT : a->lim * LIM_REL;
     if (a->lim > LIM_THR)
         d *= LIM_THR / a->lim;
+    d = soft_knee(d, CLIP_KNEE, CLIP_CEIL);
     a->dgain += (a->dgain_t - a->dgain) * DRIVE_SMOOTH;     /* the level for DRIVE */
     d *= a->dgain;
     float out = clampf(d, -32767.0f, 32767.0f);
