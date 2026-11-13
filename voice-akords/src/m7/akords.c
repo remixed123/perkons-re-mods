@@ -57,6 +57,14 @@
 #define LIM_REL         0.999861f   /* 150 ms release */
 #define CLIP_KNEE       8500.0f     /* after the limiter, a soft clip rounds what its attack lets */
 #define CLIP_CEIL       10000.0f    /*   through: untouched below the knee, never above the ceiling */
+/* LP24's low shelf (RBJ, 200 Hz, -10 dB: -9 to -10 dB below 100 Hz, -5 dB at 200 Hz, -0.7 dB
+ * at 400 Hz, nothing above 800 Hz), faded in / out over ~10 ms when the filter changes */
+#define LS_B0           0.9892554f
+#define LS_B1           (-1.9510461f)
+#define LS_B2           0.9621668f
+#define LS_A1           (-1.9506395f)
+#define LS_A2           0.9518288f
+#define LS_FADE         0.002f
 #define F_KNEE          7.0f        /* the filter's states: untouched below this, then bent */
 #define F_CEIL          10.0f       /*   smoothly towards this (saturation, not a hard clip) */
 #define DC_R            0.9995f     /* DC blocker pole (~4 Hz) */
@@ -300,6 +308,7 @@ typedef struct {
     int32_t prog;                       /* the progression offset of the newest chord */
     int32_t hold;                       /* SOUND_HOLD: the knobs set nothing yet */
     int8_t vlast[NNOTE];                /* the last chord before Spread and Bass drop */
+    float ls_z1, ls_z2, ls_k;           /* LP24's low shelf: its states, how much of it is heard */
 } ak_t;
 
 _Static_assert(__builtin_offsetof(ak_t, algo) == OFF_cVoice_algo, "algo");
@@ -1542,6 +1551,14 @@ static int16_t render(cVoice *v)
         }
         y += slot_render(a, s);
     }
+    /* LP24 keeps all the chord's bass, which overloads the Perkons's analog stage after the
+     * voice (a crackle): its low end is turned down, as loud by ear as the other filters */
+    float lk = a->slot[0].stage != IDLE && a->slot[0].fmode == F_LP24 ? 1.0f : 0.0f;
+    a->ls_k += (lk - a->ls_k) * LS_FADE;
+    float sh = LS_B0 * y + a->ls_z1;                    /* transposed direct form II */
+    a->ls_z1 = LS_B1 * y - LS_A1 * sh + a->ls_z2;
+    a->ls_z2 = LS_B2 * y - LS_A2 * sh;
+    y += a->ls_k * (sh - y);
     /* DC blocker (the pulse oscillators' offset), then the limiter and the soft clip */
     y *= MIX;
     float d = y - a->dc_x + DC_R * a->dc_y;
