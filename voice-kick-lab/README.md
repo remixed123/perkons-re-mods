@@ -43,7 +43,7 @@ and level stay with the voice; only the sound engine changes.
 | **DECAY** | How long the kick rings, from a 30 ms click to 4 s. From about 95% up, the kick never fades: it **drones** until you turn DECAY down or play it again |
 | **PARAM1** | **Sweep**: how far above the pitch each hit starts, up to 500 Hz. The pitch falls back in a few tens of milliseconds. Presets with saturation saturate harder as it rises |
 | **PARAM2** | Its job depends on ALGO (below) |
-| **ALGO** | Chooses PARAM2's job (positions top to bottom):<br>1: **attack**, from 1 to 100 ms: a soft start takes the click off<br>2: **delay mix**: 0 turns the delay off<br>3: **drive mix**: blends the drive with the clean kick; 0 turns the drive off |
+| **ALGO** | Chooses PARAM2's job (positions top to bottom):<br>1: **attack**, from 1 to 100 ms: a soft start takes the click off<br>2: **delay mix**: up to halfway the echoes come up under the full kick; past halfway the kick fades, leaving only the echoes at full. 0 turns the delay off<br>3: **drive mix**: blends the drive with the clean kick; 0 turns the drive off |
 | **MODE** | Adds a noise layer (positions top to bottom):<br>1: **clean**: no noise<br>2: **white noise**: bright hiss<br>3: **pink noise**: darker, rounder<br>The noise fades with DECAY and holds in drone |
 | CUTOFF, filter switch, DRIVE, FX SEND, LEVEL | The Pērkons's analog stages, as on every voice. They come after everything KICK LAB does, so the panel's DRIVE adds its own analog drive on top |
 

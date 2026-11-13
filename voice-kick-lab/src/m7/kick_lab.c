@@ -23,9 +23,9 @@
 
 #define SR              48000.0f
 #define NOTE_REF        36          /* trigger note meaning "no transposition" */
-#define LEVEL           21000.0f    /* a full-scale body at velocity 127: Basic peaks near 15000 */
+#define LEVEL           21000.0f    /* a full-scale body at velocity 127, before the preset's TRIM */
 #define LIM_THR         16000.0f    /* the output limiter: peaks held at this (the stock kick's highest) */
-#define LIM_REL         0.999861f   /* instant attack, 150 ms release (as Akords) */
+#define LIM_REL         0.999583f   /* instant attack, 50 ms release */
 #define NOISE_LEVEL     0.6f        /* the noise layer against the body */
 #define DRONE_AT        0.95f       /* DECAY from here up: drone (the knobs stop short of their ends) */
 #define DECAY_MIN       0.03f       /* s */
@@ -158,17 +158,22 @@ static const kl_preset_t PRESETS[NPRESET] = {
      0, 0, 0, {3, 3, 2, 0, 8, 3, 2}},
     /* 14 Lo-Fi Crush */
     {55.0f, 0.55f, 0.25f, 0.6f, 0.035f, 0.35f, 0.5f, 0.5f, 0.0f, 0.0f, 0.15f, 0.78f,
-     80.0f, 2.0f, 0.0f, 0.0f, 0.15f, 0.6f, 0.25f,
+     80.0f, 2.0f, 0.0f, 0.0f, 0.15f, 0.6f, 0.1667f,
      0, 1, 0, {2, 3, 1, 0, 5, 3, 3}},
     /* 15 Dub Echo */
     {50.0f, 0.4f, 0.45f, 0.25f, 0.05f, 0.3f, 0.5f, 0.5f, 0.0f, 0.0f, 0.1f, 0.78f,
-     70.0f, 1.3f, 0.4f, 0.2f, 0.0f, 0.5f, 0.35f,
+     70.0f, 1.3f, 0.4f, 0.2f, 0.0f, 0.5f, 0.2692f,
      0, 0, 0, {0, 1, 1, 1, 7, 6, 2}},
     /* 16 Spring Thud */
     {55.0f, 0.4f, 0.32f, 0.5f, 0.04f, 0.2f, 0.5f, 0.55f, 0.0f, 0.0f, 0.0f, 0.75f,
-     90.0f, 1.4f, 0.4f, 0.2f, 0.0f, 0.0f, 0.3f,
+     90.0f, 1.4f, 0.4f, 0.2f, 0.0f, 0.0f, 0.2143f,
      0, 0, 0, {0, 2, 1, 0, 7, 4, 1}},
 };
+
+/* each preset's output level: the short, peaky presets are raised towards the stock kick's
+ * loudness (the limiter holds their peaks); the same sound, only louder */
+static const float TRIM[NPRESET] = {1.567f, 1.365f, 1.000f, 1.000f, 1.000f, 1.000f, 1.660f, 1.035f,
+                                    1.000f, 1.000f, 1.000f, 1.109f, 1.084f, 2.570f, 1.000f, 2.239f};
 
 #ifndef KL_DEFAULT_PRESETS          /* each output's preset until the page sets one */
 #define KL_DEFAULT_PRESETS {0, 0, 0, 0}
@@ -273,6 +278,7 @@ typedef struct {
     int32_t ref2;                       /* PARAM2 (0-4095) when the job or the value was set */
     int32_t armed;                      /* PARAM2 has moved since: it sets the value */
     int32_t snap;                       /* new settings: the drive's smoothing starts at them */
+    float trim;                         /* the preset's output level */
     /* set by update() */
     float tune;                         /* Hz, the note's transposition included */
     float end_f, span;                  /* the drop's floor, and the pitch above it */
@@ -647,7 +653,8 @@ static float delay_run(kl_t *k, float x)
         dl->quiet = absf(in) > 1e-5f || absf(wet) > 1e-5f ? 0 : dl->quiet + 1;
     }
     float wet = dl->prev + (dl->cur - dl->prev) * ((float)dl->n / div);
-    return (1.0f - mix) * x + mix * wet;
+    /* up to halfway the echoes come up under the full kick; then the kick fades out */
+    return mix < 0.5f ? x + 2.0f * mix * wet : 2.0f * (1.0f - mix) * x + wet;
 }
 
 static int delay_ringing(const kl_t *k)
@@ -840,6 +847,7 @@ static void update(cVoice *v)
 static void use_preset(kl_t *k, int i)
 {
     k->pre = &PRESETS[i < NPRESET ? i : 0];
+    k->trim = TRIM[i < NPRESET ? i : 0];
     k->page = k->pre->page;
     k->role[ROLE_ATTACK] = k->pre->attack;
     k->role[ROLE_DELAY_MIX] = k->pre->dl_mix;
@@ -992,7 +1000,7 @@ static int16_t render(cVoice *v)
         }
     }
 
-    float out = limiter(k, s * LEVEL);
+    float out = limiter(k, s * (LEVEL * k->trim));
     return (int16_t)(((int32_t)out * k->gain) >> 16);
 }
 

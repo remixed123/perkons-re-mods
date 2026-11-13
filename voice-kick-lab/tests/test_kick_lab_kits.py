@@ -92,7 +92,7 @@ class TestKickLabKits(unittest.TestCase):
         pre, pg = self.m7_preset()
         self.assertNotEqual(pre, basic)
         self.assertEqual(pg, [0, 1, 1, 1, 7, 6, 2], 'soft, amount 2, tone flat, sync, 1/8D, fb 0.6, tone 3')
-        for got, want in zip(self.values(), (25, 89, 128)):
+        for got, want in zip(self.values(), (25, 69, 128)):
             self.assertAlmostEqual(got, want / 255, delta=0.003)
 
     def set_up_kits(self):

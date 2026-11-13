@@ -19,7 +19,7 @@ TUNE, PARAM1, DECAY, PARAM2, ALGO, MODE = 0, 1, 4, 5, 8, 9
 VS_VALUE, VS_BASE, VS_CATCH = 0x50, 0x6a, 0xf8
 POS1, POS2, POS3 = 1, 0, 2
 BASIC = [0x40, 0x82, 0x23, 0, 0, 0]
-DUB_ECHO = [0x4e, 0x71, 0xa6, 25, 89, 128]
+DUB_ECHO = [0x4e, 0x71, 0xa6, 25, 69, 128]
 _image = {}
 
 
