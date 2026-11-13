@@ -1,6 +1,7 @@
 # SYNTH LAB USER GUIDE
 
-**SYNTH LAB** is a monophonic synth voice for the Pērkons, on any of its four voices.
+**SYNTH LAB** is a monophonic synth voice for the Pērkons, on any of its four voices. It goes
+from classic analog synth sounds to mangled, heavily modulated, multi-layered soundscapes.
 
 * **Three oscillators**, each with its own waveform, tuning and LFOs.
 * **16 presets** to start from, and every part of the sound is yours to shape: build your own
@@ -9,6 +10,12 @@
   that's playing, a little or a lot.
 * **Scale and root**: TUNE plays only the notes of the key you set.
 * **Hard sync with filter sweeps**: the classic sync scream, swept on every note.
+
+**Tip: Random is the quickest way to experiment.** It builds each new sound from the preset
+you chose, so it keeps that preset's character. For the most interesting results, pick a
+preset you like and press **Random Wild** (row 4, step 14) a few times. When one grabs you,
+shape it further with **Tweak** (row 3, steps 13-15): a little, more or a lot. Keep a sound
+you like by saving the kit; hold a Random or Tweak step to go back one.
 
 SYNTH LAB is a port of Marco Synth, a synthesiser developed for iOS, reworked to get the most
 out of the incredible-sounding Pērkons.
