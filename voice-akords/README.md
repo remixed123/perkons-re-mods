@@ -11,6 +11,9 @@ chord in your scale. The name is Latvian for "chord".
   progressive, techno and deep house.
 * **Scale and root**: TUNE plays only the chords of the key you set, in 11 scales and all 12
   roots.
+* **Three filters**: 24 dB low-pass, 12 dB high-pass and a formant filter that sings vowels.
+  PARAM1 sweeps the cutoff (on the formant, the vowel). PARAM2 sets the resonance, which on
+  the formant becomes the formant shift, from a bigger voice to a smaller one.
 * **16 presets**, from bass and pads to stabs, Reese and formant choirs, and **Random** to
   make new sounds of the same kind. Every sound is saved with the kit.
 * **Strum, Spread and Bass drop** change how the chord is played: notes one after another,
