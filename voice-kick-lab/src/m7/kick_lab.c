@@ -521,20 +521,24 @@ static float drive_run(kl_t *k, float x)
     d->samt += sc * (k->drv_amt - d->samt);
     d->stone += sc * (k->drv_tone - d->stone);
     d->sbias += sc * (k->pre->drv_bias - d->sbias);
-    if (d->smix < 0.0005f && k->role[ROLE_DRIVE_MIX] <= 0.0f)
-        return x;
-    float gain = type == DRV_FOLD ? 1.0f + d->samt * 15.0f : (type == DRV_CRUSH ? 1.0f : 1.0f + d->samt * 20.0f);
-
-    /* 2x up: the even phase through the halfband, the odd phase a 3-sample delay */
+    /* the input's history runs always: the wet path comes out 7 samples late, and the dry
+     * signal is taken 7 samples late too, so they line up in the mix (no comb filtering) and
+     * the timing doesn't jump when the drive turns on or off */
     d->pos = (d->pos - 1) & 7;
     d->up[d->pos] = d->up[d->pos + 8] = x;
     const float *w = &d->up[d->pos];
+    float dry = w[7];
+    if (d->smix < 0.0005f && k->role[ROLE_DRIVE_MIX] <= 0.0f)
+        return dry;
+    float gain = type == DRV_FOLD ? 1.0f + d->samt * 15.0f : (type == DRV_CRUSH ? 1.0f : 1.0f + d->samt * 20.0f);
+
+    /* 2x up: the even phase through the halfband, the odd phase a 3-sample delay */
     float za = shape(d, type, 2.0f * hb_even(w), gain);
     float zb = shape(d, type, w[3], gain);
     /* 2x down */
     d->de[d->pos] = d->de[d->pos + 8] = za;
     d->dodd[d->pos] = d->dodd[d->pos + 8] = zb;
-    float y = hb_even(&d->de[d->pos]) + 0.5f * d->dodd[d->pos + 3];
+    float y = hb_even(&d->de[d->pos]) + 0.5f * d->dodd[d->pos + 4];   /* the centre: between de[3] and de[4] */
     y *= type == DRV_FOLD ? 1.0f / (1.0f + d->samt * 2.0f) : (type == DRV_CRUSH ? 1.0f : 1.0f / (1.0f + d->samt * 2.5f));
 
     float dc = y - d->dc_x + 0.999f * d->dc_y;  /* DC blocker */
@@ -543,7 +547,7 @@ static float drive_run(kl_t *k, float x)
     d->tilt += 0.12f * (dc - d->tilt);          /* tone: a tilt around ~1 kHz */
     float t = (d->stone - 0.5f) * 2.0f;
     float shaped = d->tilt * (1.0f - t * 0.6f) + (dc - d->tilt) * (1.0f + t * 0.6f);
-    return d->smix * shaped + (1.0f - d->smix) * x;
+    return d->smix * shaped + (1.0f - d->smix) * dry;
 }
 
 /* ---- delay (digital) ------------------------------------------------------------------ */
