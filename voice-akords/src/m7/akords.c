@@ -65,6 +65,13 @@
 #define LS_A1           (-1.9506395f)
 #define LS_A2           0.9518288f
 #define LS_FADE         0.002f
+/* 2x oversampling around the SVF filter's saturation, so the harmonics its bending makes
+ * above 24 kHz are filtered out instead of folding back down as
+ * aliases: a 27-tap halfband (Kaiser, beta 5) up and down, flat to 18 kHz, -1 dB at 20 kHz,
+ * below -54 dB from 30 kHz. Its taps at odd distances 1, 3, .. 13 are in os_hb (the others
+ * are zero) */
+#define OS_K            7
+#define OS_HC           0.4999922f  /* the centre tap */
 #ifndef SUS_THR
 #define SUS_THR         1500.0f     /* the sustained-level limiter: the output's 20 ms RMS held near */
 #endif                              /*   this (dense held chords overload the voice's analog stage) */
@@ -225,6 +232,13 @@ typedef struct {
     float phase, inc, target;           /* target: the glide's end (== inc when not gliding) */
 } osc_t;
 
+/* a 2x oversampled stage's lines: up (the input), its two 96 kHz phases on the way down;
+ * each line twice over (written at pos and pos + 2 OS_K), so a window never wraps */
+typedef struct {
+    float up[4 * OS_K], de[4 * OS_K], dodd[4 * OS_K];
+    int32_t pos;
+} os_t;
+
 typedef struct {
     int32_t stage;                      /* +0: the amp envelope's stage (IDLE: free) */
     int8_t note[NNOTE];                 /* +4: MIDI notes, low to high (unused: -1) */
@@ -259,6 +273,8 @@ typedef struct {
     int32_t strum_len;                  /* Strum: samples until the last note (the gate waits) */
     int32_t delay[NNOTE];               /* Strum: samples before each note starts */
     float sgain[NNOTE];                 /* Strum: each note's fade-in */
+    float f2, q2;                       /* the SVF's coefficients at 96 kHz (same poles as f, q) */
+    os_t os;                            /* the SVF's 2x oversampling */
 } slot_t;
 
 typedef struct {
@@ -362,6 +378,44 @@ INLINE float soft_knee(float x, float knee, float ceil)
     float r = ceil - knee, u = (m - knee) / r;
     float y = knee + r * u / (1.0f + u);
     return x < 0.0f ? -y : y;
+}
+
+INLINE float sqrtf_(float x)
+{
+    return x > 0.0f ? x * rsqrtf_(x) : 0.0f;
+}
+
+/* the halfband's sum over a 2 OS_K window (w[OS_K - 1] and w[OS_K] are the inner pair) */
+INLINE float os_hb(const float *w)
+{
+    return 0.3141206f * (w[6] + w[7]) - 0.0940705f * (w[5] + w[8]) + 0.045231f * (w[4] + w[9]) -
+           0.0227003f * (w[3] + w[10]) + 0.0104938f * (w[2] + w[11]) - 0.0039696f * (w[1] + w[12]) +
+           0.0008989f * (w[0] + w[13]);
+}
+
+/* up: the input x in, its two 96 kHz samples out (*a first, then *b), OS_K - 1 samples late */
+INLINE void os_up(os_t *o, float x, float *a, float *b)
+{
+    o->pos = o->pos > 0 ? o->pos - 1 : 2 * OS_K - 1;
+    o->up[o->pos] = o->up[o->pos + 2 * OS_K] = x;
+    const float *w = &o->up[o->pos];
+    *a = 2.0f * os_hb(w);
+    *b = 2.0f * OS_HC * w[OS_K - 1];
+}
+
+/* down: the two 96 kHz samples back to one (call after os_up, same pos) */
+INLINE float os_down(os_t *o, float a, float b)
+{
+    o->de[o->pos] = o->de[o->pos + 2 * OS_K] = a;
+    o->dodd[o->pos] = o->dodd[o->pos + 2 * OS_K] = b;
+    return os_hb(&o->de[o->pos]) + OS_HC * o->dodd[o->pos + OS_K];
+}
+
+static void os_clear(os_t *o)
+{
+    for (int i = 0; i < 4 * OS_K; i++)
+        o->up[i] = o->de[i] = o->dodd[i] = 0.0f;
+    o->pos = 0;
 }
 
 INLINE float absf(float x)
@@ -1116,8 +1170,9 @@ static void start_slot(ak_t *a, slot_t *s, const chord_t *c)
     adsr_start(&s->fenv, pr->f_att, pr->f_dec, pr->f_sus, pr->f_rel, (float)COEF_EVERY);
     s->low = s->band = s->low2 = s->band2 = s->low3 = s->band3 = 0.0f;
     s->ff[0] = s->ff[1] = s->ff[2] = 0.0f;
-    s->f = 0.0f;
-    s->q = 1.0f;
+    s->f = s->f2 = 0.0f;
+    s->q = s->q2 = 1.0f;
+    os_clear(&s->os);
     for (int b = 0; b < 3; b++) {
         s->fa[b][0] = 1.0f;
         s->fa[b][1] = s->fa[b][2] = 0.0f;
@@ -1211,8 +1266,10 @@ static void follow(ak_t *a)
         if (t->stage != IDLE) {         /* MODE's filter acts on the sounding chords too */
             uint8_t fm = (uint8_t)(a->fsel >= 0 ? a->fsel : t->pr.fmode);
             if (fm != t->fmode) {
-                if (fm == F_FORMANT || t->fmode == F_FORMANT)
+                if (fm == F_FORMANT || t->fmode == F_FORMANT) {
                     t->low = t->band = t->low2 = t->band2 = t->low3 = t->band3 = 0.0f;
+                    os_clear(&t->os);
+                }
                 t->fmode = fm;
             }
         }
@@ -1469,6 +1526,18 @@ static void slot_coefs(const ak_t *a, slot_t *s)
     float q0 = 1.0f - s->u_res * 0.9f;
     float tg = s->fmode == F_FORMANT ? 1.0f : (0.4f + 0.6f * tq) / (0.4f + 0.6f * q0);
     s->in_gain += (tg - s->in_gain) * k;
+    /* the SVF runs at 96 kHz: f2, q2 put its poles where f, q put them at 48 kHz (z2 = sqrt(z)),
+     * so it sounds the same below saturation. Written so float keeps it exact at low cutoffs */
+    float fa = s->f * s->q;                         /* 1 - r^2 (r: the poles' radius) */
+    float r = sqrtf_(1.0f - fa);
+    float omr = fa / (1.0f + r);                    /* 1 - r */
+    float sr = sqrtf_(r);
+    float omc = (s->f * s->f - omr * omr) / (2.0f * r);     /* 1 - cos(angle) */
+    float ch = sqrtf_(1.0f - 0.5f * omc);           /* cos(angle / 2) */
+    float omch = 0.5f * omc / (1.0f + ch);
+    float omsr = omr / (1.0f + sr);
+    s->f2 = sqrtf_(omsr * omsr + 2.0f * sr * omch);
+    s->q2 = s->f2 > 1e-7f ? omr / s->f2 : s->q;
 }
 
 /* one TPT (zero-delay-feedback) state-variable filter step (Zavalishin; Simper's form), for
@@ -1492,6 +1561,21 @@ INLINE float slot_out(slot_t *s, float y)
             s->stage = IDLE;
     }
     return y;
+}
+
+/* one 96 kHz step of the SVF: the high-pass, or the 24 dB low-pass */
+INLINE float svf96(slot_t *s, float x)
+{
+    float f = s->f2, q = s->q2;
+    s->low = soft_knee(s->low + f * s->band, F_KNEE, F_CEIL);
+    float high = x - s->low - q * s->band;
+    s->band = soft_knee(s->band + f * high, F_KNEE, F_CEIL);
+    if (s->fmode == F_HP12)
+        return high;
+    s->low2 = soft_knee(s->low2 + f * s->band2, F_KNEE, F_CEIL);  /* LP24: a second stage */
+    float high2 = s->low - s->low2 - q * s->band2;
+    s->band2 = soft_knee(s->band2 + f * high2, F_KNEE, F_CEIL);
+    return s->low2;
 }
 
 INLINE float slot_render(const ak_t *a, slot_t *s)
@@ -1534,17 +1618,12 @@ INLINE float slot_render(const ak_t *a, slot_t *s)
 
     /* the iOS synth's state-variable filter (Chamberlin), its states held below +-10 (the edge
      * high resonance pushes it to) by a soft knee: it saturates there instead of clipping
-     * inside its loop (a crackle): 12 dB high-pass, or two stages for 24 dB low-pass */
-    float f = s->f, q = s->q;
-    s->low = soft_knee(s->low + f * s->band, F_KNEE, F_CEIL);
-    float high = x - s->low - q * s->band;
-    s->band = soft_knee(s->band + f * high, F_KNEE, F_CEIL);
-    if (s->fmode == F_HP12)
-        return slot_out(s, high * env * s->amp);
-    s->low2 = soft_knee(s->low2 + f * s->band2, F_KNEE, F_CEIL);  /* LP24: a second stage */
-    float high2 = s->low - s->low2 - q * s->band2;
-    s->band2 = soft_knee(s->band2 + f * high2, F_KNEE, F_CEIL);
-    return slot_out(s, s->low2 * env * s->amp);
+     * inside its loop (a crackle): 12 dB high-pass, or two stages for 24 dB low-pass. At 96 kHz
+     * (2x oversampled), so the saturation's harmonics don't alias */
+    float u0, u1;
+    os_up(&s->os, x, &u0, &u1);
+    float y0 = svf96(s, u0), y1 = svf96(s, u1);
+    return slot_out(s, os_down(&s->os, y0, y1) * env * s->amp);
 }
 
 static int16_t render(cVoice *v)
