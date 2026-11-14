@@ -13,14 +13,14 @@
  *   PARAM1 (param 2)  filter cutoff, relative to the sound (12 o'clock: the sound's own)
  *   PARAM2 (param 3)  ALGO's job, relative to the sound: resonance (position 1), filter
  *                     envelope amount (2), sync: the slaves' pitch (3)
- *   MODE              drive into the filter: clean (position 1), warm (2), hot (3)
+ *   MODE              drive after the filter: clean (position 1), warm (2), hot (3)
  *
  * Sync and sweep play as the sound sets them: an oscillator with its sync on is reset by
  * oscillator 1, and its sweep depth (if any) has the filter envelope sweep its pitch.
  *
  * The sound is 88 small values (sl_sound.h), as the kit saves it: a preset, or what the M4
  * sends ("synth-lab"). The chain: oscillators (minBLEP-corrected steps; slaves reset by the
- * master; a silent one only keeps its phase) -> mix -> fold -> drive (MODE) -> filter (trapezoidal state
+ * master; a silent one only keeps its phase) -> mix -> fold -> filter -> drive (MODE) (trapezoidal state
  * variable, saturating; or a ladder) -> amp envelope -> DC blocker -> limiter -> the level for DRIVE. LFOs,
  * envelopes' filter side, glide, pitch and the filter's coefficients work every CTL samples.
  */
@@ -83,8 +83,10 @@ enum { C_A1, C_A2, C_A3, C_B1, C_B2, C_B3, C_G1, NCOEF };     /* the filter's co
 enum { C_LG = C_A1, C_LD, C_LK };       /* the ladder's, in the resonant stage's places: pole G, 1 / (1 + k G^4), k */
 
 /* MODE's drive, by switch value (POS2 = 0 warm, POS1 = 1 clean, POS3 = 2 hot): the gain into a
- * cubic soft clip and the wet share. Its level follows the dry sound's (DRV_AVG). */
-static const float DRV_GAIN[3] = {2.5f, 1.0f, 5.0f};
+ * cubic soft clip, its bias (asymmetry: even harmonics, a tube's warmth) and the wet share. Its
+ * level follows the dry sound's (DRV_AVG). */
+static const float DRV_GAIN[3] = {3.5f, 1.0f, 9.0f};
+static const float DRV_BIAS[3] = {0.3f, 0.0f, 0.15f};
 static const float DRV_WET[3] = {1.0f, 0.0f, 1.0f};
 #define DRV_AVG         (1.0f / 2400.0f)    /* the levels before and after it: 50 ms averages */
 
@@ -219,6 +221,7 @@ typedef struct {
     /* MODE's drive: gain, make-up, wet (smoothed); the soft clip's last input and antiderivative */
     float drv_g, drv_m, drv_w, drv_x1, drv_F1;
     float drv_in, drv_out;              /* mean squares before and after the clip (its make-up) */
+    float drv_b, drv_c;                 /* the bias, and the clip's output at it (taken off: no DC) */
     /* out */
     float dc_x, dc_y, lim, dgain, dgain_t;
 } sy_t;
@@ -256,6 +259,26 @@ INLINE float soft_knee(float x, float knee, float ceil)
     float r = ceil - knee, u = (m - knee) / r;
     float y = knee + r * u / (1.0f + u);
     return x < 0.0f ? -y : y;
+}
+
+/* the drive's cubic soft clip, u - u^3 / 3 up to |u| = 1, then flat at +-2/3, and its
+ * antiderivative (for first-order antiderivative antialiasing) */
+INLINE float clip3(float u)
+{
+    if (u > 1.0f)
+        return 2.0f / 3.0f;
+    if (u < -1.0f)
+        return -2.0f / 3.0f;
+    return u - u * u * u * (1.0f / 3.0f);
+}
+
+INLINE float clip3_F(float u)
+{
+    float a = absf(u);
+    if (a > 1.0f)
+        return (2.0f / 3.0f) * a - 0.25f;
+    float u2 = u * u;
+    return u2 * (0.5f - u2 * (1.0f / 12.0f));
 }
 
 /* 2^x, |x| < 100 (as voice-zibens) */
@@ -769,6 +792,8 @@ static void control(sy_t *k)
     int m = k->mode < 3 ? k->mode : POS1;
     k->drv_g += (DRV_GAIN[m] - k->drv_g) * DRV_SMOOTH;
     k->drv_w += (DRV_WET[m] - k->drv_w) * DRV_SMOOTH;
+    k->drv_b += (DRV_BIAS[m] - k->drv_b) * DRV_SMOOTH;
+    k->drv_c = clip3(k->drv_b);
     if (k->drv_w > 0.0005f && k->drv_out > 1e-9f) {
         /* make-up: the clip's output back to the dry sound's level, between -6 and +12 dB */
         float t = k->drv_in > 1e-9f ? k->drv_in * rsqrtf_(k->drv_in) * rsqrtf_(k->drv_out) : 1.0f;
@@ -978,32 +1003,12 @@ INLINE float slave_sync(osc_t *o, uint32_t *rng, float frac)
     return y;
 }
 
-/* the drive's cubic soft clip, u - u^3 / 3 up to |u| = 1, then flat at +-2/3, and its
- * antiderivative (for first-order antiderivative antialiasing) */
-INLINE float clip3(float u)
-{
-    if (u > 1.0f)
-        return 2.0f / 3.0f;
-    if (u < -1.0f)
-        return -2.0f / 3.0f;
-    return u - u * u * u * (1.0f / 3.0f);
-}
-
-INLINE float clip3_F(float u)
-{
-    float a = absf(u);
-    if (a > 1.0f)
-        return (2.0f / 3.0f) * a - 0.25f;
-    float u2 = u * u;
-    return u2 * (0.5f - u2 * (1.0f / 12.0f));
-}
-
 /* MODE's drive: the soft clip, antialiased (the antiderivative's difference over the step;
  * the midpoint when the step is tiny), crossfaded in by drv_w */
 static __attribute__((noinline)) float mode_drive(sy_t *k, float x)
 {
-    float u = x * k->drv_g, F = clip3_F(u), du = u - k->drv_x1;
-    float y = du > 1e-4f || du < -1e-4f ? (F - k->drv_F1) / du : clip3(0.5f * (u + k->drv_x1));
+    float u = x * k->drv_g + k->drv_b, F = clip3_F(u), du = u - k->drv_x1;
+    float y = (du > 1e-4f || du < -1e-4f ? (F - k->drv_F1) / du : clip3(0.5f * (u + k->drv_x1))) - k->drv_c;
     k->drv_x1 = u;
     k->drv_F1 = F;
     k->drv_in += (x * x - k->drv_in) * DRV_AVG;
@@ -1117,10 +1122,6 @@ static int16_t render(cVoice *v)
         k->prev = mix + k->fold_bias;
     }
 
-    /* MODE: drive into the filter */
-    if (k->drv_w > 0.0005f)
-        mix = mode_drive(k, mix);
-
     /* filter: the trapezoidal state-variable filter (stable however it's swept); its band
      * state saturates when the resonance is pushed */
     if (k->filt_on) {
@@ -1165,6 +1166,11 @@ static int16_t render(cVoice *v)
             }
         }
     }
+
+    /* MODE: drive, after the filter (the filtered tone gets its harmonics back: an overdriven
+     * filter's growl), before the amp envelope (the same grit at any level of the note) */
+    if (k->drv_w > 0.0005f)
+        mix = mode_drive(k, mix);
 
     float a = env_step(&k->aenv);
     if (k->aenv.stage == IDLE) {

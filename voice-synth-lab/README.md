@@ -51,7 +51,7 @@ and level stay with the voice; only the sound engine changes.
 | **PARAM1** | **Filter cutoff.** At 12 o'clock you hear the sound as saved; turn left to close the filter, right to open it, all the way to 20 kHz. Softer notes play a little darker: velocity closes the filter by up to an octave |
 | **PARAM2** | Its job depends on ALGO (below). At 12 o'clock you hear the sound as saved; turn either way from there |
 | **ALGO** | Chooses PARAM2's job (positions top to bottom):<br>1: **resonance**<br>2: **filter envelope amount**<br>3: **sync pitch**: moves the synced oscillators from an octave down to two octaves up. The note stays the same; only the sync tone changes |
-| **MODE** | **Drive** into the filter, on every sound (positions top to bottom):<br>1: **clean**: the sound as saved<br>2: **warm**: rounded, thicker, a touch of grit<br>3: **hot**: driven hard, gritty and dense<br>The level stays about the same, so it changes the tone, not the volume. It sounds especially good into the [ladder filter](#the-ladder-filter) |
+| **MODE** | **Drive**, on every sound: the filtered sound overdriven, like a synth's filter pushed into distortion (positions top to bottom):<br>1: **clean**: the sound as saved<br>2: **warm**: thicker and grittier, with a tube-like warmth<br>3: **hot**: driven hard, raw and dense<br>The level stays about the same, so it changes the tone, not the volume. The more closed the filter, the more it brings back |
 | CUTOFF, filter switch, DRIVE, FX SEND, LEVEL | The Pērkons's analog stages, as on every voice. SYNTH LAB gets a little quieter as DRIVE goes up (+3 dB with no drive, -3 dB at full), so DRIVE changes the tone more than the volume |
 
 * **The filter saturates like an analog one**: push the resonance and it growls rather than
