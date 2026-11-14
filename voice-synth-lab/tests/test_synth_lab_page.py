@@ -282,7 +282,7 @@ class TestSynthLabPage(unittest.TestCase):
         self.press(r, SYNC)                                     # filter off
         self.key(r, 16 * 2 + 10, False)
         x = self.sound(r, 0)
-        self.assertEqual((x[FILT_TYPE], x[FILT_ON]), (6, 0))
+        self.assertEqual((x[FILT_TYPE], x[FILT_ON]), (7, 0))     # the last type: the ladder
         self.key(r, 16 * 2 + 11, True)                          # Fold: RATE = the amount
         r.knob(RATE, 0.5)
         self.poll_knobs(r)

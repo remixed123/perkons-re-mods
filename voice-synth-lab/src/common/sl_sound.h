@@ -57,7 +57,7 @@ static const uint8_t SL_WIDTH[SL_NFIELD] = {
 /* the choices */
 enum { SL_W_SINE, SL_W_TRI, SL_W_SAW, SL_W_RAMP, SL_W_PULSE, SL_W_NOISE, SL_NWAVE };
 enum { SL_S_SINE, SL_S_TRI, SL_S_SAW, SL_S_RAMP, SL_S_SQUARE, SL_S_RANDOM, SL_NSHAPE };
-enum { SL_F_LP6, SL_F_LP12, SL_F_LP18, SL_F_LP24, SL_F_BP, SL_F_HP, SL_F_NOTCH, SL_NFILT };
+enum { SL_F_LP6, SL_F_LP12, SL_F_LP18, SL_F_LP24, SL_F_BP, SL_F_HP, SL_F_NOTCH, SL_F_LADDER, SL_NFILT };
 #define SL_NPRESET      16
 #define SL_NSTARTER     5           /* starters: a hold on a preset step */
 #define SL_NSCALE       10

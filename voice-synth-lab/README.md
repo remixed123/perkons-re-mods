@@ -48,12 +48,14 @@ and level stay with the voice; only the sound engine changes.
 |---|---|
 | **TUNE** | Picks the note. It steps through the notes of the scale and root set on the configuration page, from C2 to C6. The lowest oscillator plays this note; the others sit at their own intervals above it |
 | **DECAY** | Works as **GATE**: how long each note holds before it releases, from 0.05 s to 2 s. From about 95% up, the note never releases: it **drones** |
-| **PARAM1** | **Filter cutoff.** At 12 o'clock you hear the sound as saved; turn left to close the filter, right to open it |
+| **PARAM1** | **Filter cutoff.** At 12 o'clock you hear the sound as saved; turn left to close the filter, right to open it, all the way to 20 kHz. Softer notes play a little darker: velocity closes the filter by up to an octave |
 | **PARAM2** | Its job depends on ALGO (below). At 12 o'clock you hear the sound as saved; turn either way from there |
 | **ALGO** | Chooses PARAM2's job (positions top to bottom):<br>1: **resonance**<br>2: **filter envelope amount**<br>3: **sync pitch**: moves the synced oscillators from an octave down to two octaves up. The note stays the same; only the sync tone changes |
 | **MODE** | Chooses how the oscillators sync (positions top to bottom):<br>1: **free**: no sync, the oscillators run on their own<br>2: **sync**: oscillators 2 and 3 are hard synced to oscillator 1, when their sync is on (Wave cell, SYNC)<br>3: **sync + sweep**: as 2, and the filter envelope also sweeps the synced oscillators up, giving the classic sync "yow" on every note |
 | CUTOFF, filter switch, DRIVE, FX SEND, LEVEL | The Pērkons's analog stages, as on every voice. SYNTH LAB gets a little quieter as DRIVE goes up (+3 dB with no drive, -3 dB at full), so DRIVE changes the tone more than the volume |
 
+* **The filter saturates like an analog one**: push the resonance and it growls rather than
+  whistling or clipping, and it stays stable however fast it's swept.
 * **PARAM2 keeps all three values.** When ALGO gives it another job, that value stays as it was
   until you move the knob; then the knob sets it.
 * The sync presets need MODE on 2 or 3 to sound synced.
@@ -89,8 +91,23 @@ A knob only takes over once you turn it a little, so just holding a cell changes
 | **Tune** (osc 1-3) | octave / interval: x0.25, x0.5, x1, x1.5, x2, x3, x4, x8 | fine tune, ±50 cents | sweep depth in MODE 3, up to 4 octaves | sync detune: nudges whole-number ratios off, so the sync tone stays bright instead of just doubling oscillator 1 |
 | **Pitch LFO**, **Volume LFO** (osc 1-3), **Cutoff LFO**, **Fold LFO** | speed, 0.05 to 20 Hz (a note division when synced) | shape: sine, triangle, saw, ramp, square, random | depth | follow the Pērkons's tempo |
 | **Filter Env**, **Amp Env** | attack time | release time | sustain level | curve: linear (off) or exponential (on) |
-| **Filter** (row 3, step 11) | type: low-pass 6, 12, 18 or 24 dB, band-pass, high-pass, notch | key tracking: how much the cutoff follows the note (4 steps) | filter envelope decay time | filter on / off |
+| **Filter** (row 3, step 11) | type: low-pass 6, 12, 18 or 24 dB, band-pass, high-pass, notch, [ladder](#the-ladder-filter) | key tracking: how much the cutoff follows the note (4 steps) | filter envelope decay time | filter on / off |
 | **Fold** (row 3, step 12) | fold amount | symmetry: shifts the fold for a different set of harmonics | envelope push: how much the filter envelope adds to the fold on each note | wavefolder on / off |
+
+### The ladder filter
+
+The last filter type, at the top of the Filter cell's RATE, is a **ladder**: a model of the
+classic transistor-ladder low-pass found on the great analog monosynths, the sound of fat basses
+and acid lines. Like LP24 it cuts 24 dB per octave, but it behaves differently:
+
+* **Resonance thins the bass.** As you turn the resonance up, the ladder trades low end for a
+  round, vocal peak: the squelch of an acid line. LP24 keeps its low end at any resonance.
+* **It saturates as a whole.** Push the resonance or play loud sounds into it and it thickens
+  and growls instead of getting brighter.
+* **At full resonance it rings** at the cutoff with a pure tone you can play with PARAM1 and the
+  filter envelope.
+
+Presets 1-3 use it. Try it on any bass or lead: hold the Filter cell and turn RATE fully up.
 
 ### Presets and starters (row 1)
 
@@ -99,9 +116,9 @@ its whole sound again and sets PARAM1 to 12 o'clock; the scale, root and Mutate 
 
 | step | preset | | step | preset |
 |---|---|---|---|---|
-| 1 | **Fat Analog Bass** | | 9 | **Chorus Pad** |
-| 2 | **Acid Square** | | 10 | **Classic Analog Pad** |
-| 3 | **Dark Bite Bass** | | 11 | **Ethereal Shimmer** |
+| 1 | **Fat Analog Bass**: ladder | | 9 | **Chorus Pad** |
+| 2 | **Acid Square**: ladder | | 10 | **Classic Analog Pad** |
+| 3 | **Dark Bite Bass**: ladder | | 11 | **Ethereal Shimmer** |
 | 4 | **West Coast Bongo**: folded | | 12 | **Sync Pluck** |
 | 5 | **Aggressive Sync** | | 13 | **Sync Siren** |
 | 6 | **Hoover** | | 14 | **Polyrhythm**: three oscillators gated at 2, 3 and 5 Hz |

@@ -456,7 +456,7 @@ static void recipe(uint8_t *v, int cat)
             v[SL_OSC(2) + SL_PW] = (uint8_t)between(10, 28);
         } else if (r == 1) {            /* acid */
             osc(v, 0, chance(50) ? SL_W_SAW : SL_W_PULSE, 28, 2, SL_MID, 0);
-            v[SL_FILT_TYPE] = chance(50) ? SL_F_LP18 : SL_F_LP24;
+            v[SL_FILT_TYPE] = chance(50) ? SL_F_LADDER : (chance(50) ? SL_F_LP18 : SL_F_LP24);
             v[SL_RES] = (uint8_t)between(18, 27);
             v[SL_ENVAMT] = (uint8_t)between(25, 30);
             v[SL_AENV + SL_E_SUS] = (uint8_t)between(0, 8);
@@ -678,8 +678,14 @@ static void wild(uint8_t *v, int cat)
         lfo(v, SL_FLFO, rr(20), rr(SL_NSHAPE), between(4, 16), 0);
     if (chance(15))
         lfo(v, SL_CLFO, rr(24), rr(SL_NSHAPE), between(4, 14), 0);
-    if (chance(20))
-        v[SL_FILT_TYPE] = (uint8_t)(cat == CAT_BASS ? between(SL_F_LP12, SL_F_LP24) : rr(SL_NFILT - 1));
+    if (chance(20)) {                   /* another filter: bass a low-pass or the ladder; others any but notch */
+        int t = rr(SL_F_NOTCH + 1);
+        if (cat == CAT_BASS)
+            t = rr(4) ? between(SL_F_LP12, SL_F_LP24) : SL_F_LADDER;
+        else if (t == SL_F_NOTCH)
+            t = SL_F_LADDER;
+        v[SL_FILT_TYPE] = (uint8_t)t;
+    }
     if (chance(40))
         v[SL_CUTOFF] = (uint8_t)between(cat == CAT_BASS ? 8 : 14, cat == CAT_BASS ? 20 : 28);
     if (chance(30))

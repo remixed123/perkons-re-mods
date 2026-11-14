@@ -18,8 +18,9 @@
  *
  * The sound is 88 small values (sl_sound.h), as the kit saves it: a preset, or what the M4
  * sends ("synth-lab"). The chain: oscillators (minBLEP-corrected steps; slaves reset by the
- * master) -> mix -> fold -> filter -> amp envelope -> DC blocker -> limiter -> the level for
- * DRIVE. LFOs, envelopes' filter side, glide and pitch work every CTL samples.
+ * master; a silent one only keeps its phase) -> mix -> fold -> filter (trapezoidal state
+ * variable, saturating; or a ladder) -> amp envelope -> DC blocker -> limiter -> the level for DRIVE. LFOs,
+ * envelopes' filter side, glide, pitch and the filter's coefficients work every CTL samples.
  */
 #include <stdint.h>
 #include "fw_m7.h"
@@ -36,14 +37,21 @@
 #define HYST            0.2f        /* TUNE: hysteresis while a note sounds, of a step each side */
 #define FOLLOW_SAMPLES  1200        /* 25 ms: a new note follows TUNE at once (as Akords) */
 #define SETTLE_SAMPLES  960         /* later, a new TUNE step must hold 20 ms */
-#define LEVEL           8000.0f     /* peak scale, as the stock tonal voices */
+#define LEVEL           6750.0f     /* peak scale: 1.5 dB under the stock tonal voices' 8000, so a
+                                     * saw's peaks (its band-limited overshoot) stay under CLIP_KNEE */
 #define LIM_THR         9000.0f     /* the output limiter: peaks held near this */
 #define LIM_ATT         0.067f      /* 0.3 ms attack (no instant grab: it would square the peaks) */
 #define LIM_REL         0.999861f   /* 150 ms release */
 #define CLIP_KNEE       8500.0f     /* after the limiter, a soft clip rounds what its attack lets */
 #define CLIP_CEIL       10000.0f    /*   through: untouched below the knee, never above the ceiling */
-#define F_KNEE          7.0f        /* the filter's states: untouched below this, then bent */
-#define F_CEIL          10.0f       /*   smoothly towards this (saturation, not a hard clip) */
+#define SAT_KNEE        3.0f        /* the band state: resonance pushed hard saturates (an analog */
+#define SAT_CEIL        6.0f        /*   filter's growl) instead of growing on */
+#define LP2_K           1.0f        /* LP24's second stage: damping 1, no resonance of its own */
+#define LAD_K           4.4f        /* the ladder: feedback at full resonance (4: it rings on its own) */
+#define LAD_COMP        0.5f        /* its input lifted by 1 + LAD_COMP x feedback: the bass thins
+                                     * as the resonance rises (the ladder's sound), but not all of it */
+#define LAD_DRIVE       0.5f        /* its saturation: 2 tanh(x / 2), so +-2 at most */
+#define VEL_CUT_OCT     1.0f        /* velocity: 127 as the sound, 0 an octave darker */
 #define DC_R            0.9995f     /* DC blocker pole (~4 Hz) */
 #define DRONE_AT        0.95f
 #define DETENT          0.02f       /* +-2% around 12 o'clock is the sound's own value */
@@ -58,14 +66,18 @@
 /* the 5-bit scales (the engine's side of sl_sound.h) */
 #define T_OCT           12.965784f  /* envelope times: 1 ms .. 8 s */
 #define LFO_OCT         8.643856f   /* LFO rates: 0.05 .. 20 Hz; glide: 5 ms .. 2 s */
-#define CUT_MIN         40.0f       /* cutoff: 40 Hz .. 20 kHz */
-#define CUT_OCT         9.0f
+#define CUT_MIN         20.0f       /* cutoff: 20 Hz .. 20 kHz */
+#define CUT_OCT         10.0f
+#define CUT_FIELD       0.9f        /* the sound's cutoff (0-31) spans the first 9 octaves, 20 Hz to
+                                     * 10 kHz, as the earlier filter played it: PARAM1 opens the rest */
 
 /* switch values are 1, 0, 2 for panel positions 1, 2, 3 */
 enum { POS1 = 1, POS2 = 0, POS3 = 2 };
 enum { R_RES, R_ENV, R_SYNC, NROLE };
 enum { IDLE, ATTACK, DECAY, SUSTAIN, RELEASE };
 enum { L_PITCH0, L_VOL0 = 3, L_CUT = 6, L_FOLD, NLFO };
+enum { C_A1, C_A2, C_A3, C_B1, C_B2, C_B3, C_G1, NCOEF };     /* the filter's coefficients */
+enum { C_LG = C_A1, C_LD, C_LK };       /* the ladder's, in the resonant stage's places: pole G, 1 / (1 + k G^4), k */
 
 static const float OCT_RATIO[8] = {0.25f, 0.5f, 1.0f, 1.5f, 2.0f, 3.0f, 4.0f, 8.0f};
 /* tempo-synced LFOs: beats per cycle, longest to shortest (RATE up = faster) */
@@ -126,6 +138,7 @@ typedef struct {
     float ring[MB_TAPS];                /* minBLEP residuals still to add, from the next sample on */
     int32_t rp;
     int32_t wave;
+    int32_t idle;                       /* silent: only its phase runs (its residuals cleared) */
 } osc_t;
 
 typedef struct {
@@ -181,14 +194,17 @@ typedef struct {
     float vel;
     /* control */
     int32_t ctl;
+    int32_t live;                       /* oscillators (bits) with a level: the others only keep their phase */
     lfo_t lfo[NLFO];
     uint32_t rng;
     osc_t o[NOSC];
     env_t aenv, fenv;
     float fenv_lvl;
     /* filter */
-    float low, band, low2, band2, one;
-    float f, q, f_to, q_to, f_step, q_step, in_gain;
+    float low, band, low2, band2, one;  /* trapezoidal integrators' states; the one-pole's */
+    float lad[4];                       /* the ladder's four poles */
+    float c[NCOEF], c_step[NCOEF];      /* coefficients (the resonant stage's ramped over a control step) */
+    float q, q_step, in_gain;           /* damping (1 / Q) */
     /* fold */
     float fold, fold_step, prev;
     /* out */
@@ -242,6 +258,16 @@ static float exp2f_(float x)
               f * (0.00133336f + f * (0.00015404f + f * 0.00001525f))))));
     union { uint32_t u; float v; } e = {(uint32_t)((int32_t)fi + 127) << 23};
     return p * e.v;
+}
+
+/* 1 / sqrt(x), x > 0 */
+INLINE float rsqrtf_(float x)
+{
+    union { float f; uint32_t u; } v = {x};
+    v.u = 0x5f3759dfu - (v.u >> 1);
+    float y = v.f;
+    y *= 1.5f - 0.5f * x * y * y;
+    return y * (1.5f - 0.5f * x * y * y);
 }
 
 /* tan(x) for 0 <= x <= ~1.2 (Pade) */
@@ -362,7 +388,7 @@ static void decode(sy_t *k)
     }
     env_set(&k->aenv, v + SL_AENV, v[SL_ADECAY], 1.0f);
     env_set(&k->fenv, v + SL_FENV, v[SL_FDECAY], (float)CTL);
-    k->u_cut = (float)v[SL_CUTOFF] * (1.0f / 31.0f);
+    k->u_cut = (float)v[SL_CUTOFF] * (CUT_FIELD / 31.0f);
     k->u_res = (float)v[SL_RES] * (1.0f / 31.0f);
     k->u_env = clampf(0.5f + (float)(v[SL_ENVAMT] - SL_MID) * (1.0f / 30.0f), 0.0f, 1.0f);
     k->keytrack = (float)(v[SL_KEYTRACK] & 3) * (1.0f / 3.0f);
@@ -629,6 +655,7 @@ static void control(sy_t *k)
     float sync_semis = k->role[R_SYNC] < 0.5f - DETENT || k->role[R_SYNC] > 0.5f + DETENT
                      ? 36.0f * warp(k->role[R_SYNC], 1.0f / 3.0f) - 12.0f : 0.0f;
     float master = 0.0f;
+    int live = 0;
     for (int i = 0; i < NOSC; i++) {
         osc_t *o = &k->o[i];
         float semis = 0.0f;
@@ -654,28 +681,63 @@ static void control(sy_t *k)
         float g = k->level[i] * k->norm;
         if (k->lfo_depth[L_VOL0 + i] > 0.0f)
             g *= 1.0f - k->lfo_depth[L_VOL0 + i] * (1.0f - k->lfo[L_VOL0 + i].val);
-        o->g_step = (g - o->g) * (1.0f / CTL);
+        if (g == 0.0f && o->g < 1e-4f) {   /* silent: it stops (render keeps only its phase) */
+            o->g = o->g_step = 0.0f;
+        } else {
+            o->g_step = (g - o->g) * (1.0f / CTL);
+            o->idle = 0;
+            live |= 1 << i;
+        }
     }
+    k->live = live;
 
     /* filter: cutoff (PARAM1, key tracking, LFO, envelope) and resonance (PARAM2) */
     if (k->filt_on) {
         float oct = warp(k->k_cut, k->u_cut) * CUT_OCT;
         oct += (k->note_midi - 60.0f) * k->keytrack * (1.0f / 12.0f);
+        oct += (k->vel - 1.0f) * VEL_CUT_OCT;
         if (k->lfo_depth[L_CUT] > 0.0f)
             oct += (2.0f * k->lfo[L_CUT].val - 1.0f) * k->lfo_depth[L_CUT];
         float ep = fe * (2.0f * warp(k->role[R_ENV], k->u_env) - 1.0f);
         float scale = ep >= 0.0f ? 1.0f + ep * 10.0f : (1.0f + ep > 0.05f ? 1.0f + ep : 0.05f);
         float fc = clampf(CUT_MIN * exp2f_(oct) * scale, 20.0f, 0.45f * SR);
-        /* the iOS synth's coefficient, 2 tan(pi fc / 2 SR), held below 0.95 to keep it stable */
-        float tf = 2.0f * tanf_(0.5f * PI * fc / SR);
-        if (tf > 0.95f)
-            tf = 0.95f;
         float res = warp(k->role[R_RES], k->u_res);
         float tq = 1.0f - res * 0.9f;
-        k->f_step = (tf - k->f) * (1.0f / CTL);
-        k->q_step = (tq - k->q) * (1.0f / CTL);
-        /* resonance compensation: the peak grows about as 1 / q (as Akords) */
+        /* the trapezoidal SVF (Zavalishin, Simper): g = tan(pi fc / SR), any fc up to 0.45 SR;
+         * damping tq (the iOS synth's q) */
+        float p = fc * (0.5f / SR);
+        float g = sin2pi(p) / sin2pi(p + 0.25f);
+        float t[NCOEF];
         float tg = 0.4f + 0.6f * tq;
+        if (k->ftype == SL_F_LADDER) {
+            /* four trapezoidal one-poles at fc, their output fed back to the input
+             * (Zavalishin's zero-delay ladder; the loop solved linearly, then saturated) */
+            float G = g / (1.0f + g), G4 = G * G, kk = res * LAD_K;
+            G4 *= G4;
+            t[C_LG] = G;
+            t[C_LD] = 1.0f / (1.0f + kk * G4);
+            t[C_LK] = kk;
+            tg = 1.0f + LAD_COMP * kk;
+        } else {
+            t[C_A1] = 1.0f / (1.0f + g * (g + tq));
+            t[C_A2] = g * t[C_A1];
+            t[C_A3] = g * t[C_A2];
+            t[C_B1] = 1.0f / (1.0f + g * (g + LP2_K));
+            t[C_B2] = g * t[C_B1];
+            t[C_B3] = g * t[C_B2];
+            /* the one-pole (LP6, LP18's third pole): an octave under fc, as the iOS synth's */
+            float gh = tanf_(PI * p);
+            t[C_G1] = gh / (1.0f + gh);
+            for (int i = C_B1; i < NCOEF; i++)   /* these follow at once (no resonance: no zipper) */
+                k->c[i] = t[i];
+        }
+        for (int i = C_A1; i <= C_A3; i++)       /* the resonant stage glides over the step */
+            k->c_step[i] = (t[i] - k->c[i]) * (1.0f / CTL);
+        k->q_step = (tq - k->q) * (1.0f / CTL);
+        /* resonance compensation: the SVF's peak grows about as 1 / q (as Akords); LP24 has one
+         * resonant stage, so half of it in dB; the ladder's set above */
+        if (k->ftype == SL_F_LP24)
+            tg *= rsqrtf_(tg);
         k->in_gain += (tg - k->in_gain) * 0.25f;
     }
 
@@ -745,6 +807,7 @@ static void trigger(cVoice *v)
                 k->o[i].ring[t] = 0.0f;
         }
         k->low = k->band = k->low2 = k->band2 = k->one = 0.0f;
+        k->lad[0] = k->lad[1] = k->lad[2] = k->lad[3] = 0.0f;
         k->fold = 0.0f;
         k->prev = 0.0f;
     }
@@ -771,7 +834,7 @@ static void init(cVoice *v)
     k->armed = 0;
     k->tune_step = -1;
     k->tune_since = -1;
-    k->q = k->q_to = 1.0f;
+    k->q = 1.0f;
     k->in_gain = 1.0f;
     k->rng = 0x2545f491u + (uint32_t)k->out;
     read_knobs(k);
@@ -851,6 +914,24 @@ INLINE float osc_run(osc_t *o, uint32_t *rng, int *wrapped, float *frac)
     return y;
 }
 
+/* a silent oscillator: only its phase (a silent master still syncs its slaves); the
+ * residuals it had are dropped once */
+static __attribute__((noinline)) void osc_skip(osc_t *o, int *wrapped, float *frac)
+{
+    if (!o->idle) {
+        o->idle = 1;
+        for (int t = 0; t < MB_TAPS; t++)
+            o->ring[t] = 0.0f;
+    }
+    float n = o->ph + o->dt;
+    *wrapped = n >= 1.0f;
+    if (*wrapped) {
+        n -= 1.0f;
+        *frac = n / o->dt;
+    }
+    o->ph = n;
+}
+
 /* a slave reset by its master `frac` samples before the next sample */
 INLINE float slave_sync(osc_t *o, uint32_t *rng, float frac)
 {
@@ -874,6 +955,64 @@ INLINE float slave_sync(osc_t *o, uint32_t *rng, float frac)
     return y;
 }
 
+/* tanh(x) (Pade, exact at +-3, flat beyond) */
+INLINE float tanhf_(float x)
+{
+    if (x > 3.0f)
+        return 1.0f;
+    if (x < -3.0f)
+        return -1.0f;
+    float x2 = x * x;
+    return x * (27.0f + x2) / (27.0f + 9.0f * x2);
+}
+
+/* the ladder: four one-poles G, the fourth's output fed back (k); its states' sum S, so the loop's
+ * input is solved without a delay, u = (x - k S) / (1 + k G^4), then saturated */
+INLINE float ladder(sy_t *k, float x)
+{
+    float *c = k->c, *cs = k->c_step, *s = k->lad;
+    c[C_LG] += cs[C_LG];
+    c[C_LD] += cs[C_LD];
+    c[C_LK] += cs[C_LK];
+    float G = c[C_LG];
+    float S = (1.0f - G) * (((s[0] * G + s[1]) * G + s[2]) * G + s[3]);
+    float u = (x - c[C_LK] * S) * c[C_LD];
+    u = tanhf_(u * LAD_DRIVE) * (1.0f / LAD_DRIVE);
+    for (int i = 0; i < 4; i++) {
+        float v = (u - s[i]) * G;
+        u = v + s[i];
+        s[i] = u + v;
+    }
+    return u;
+}
+
+/* the oscillators when some are silent (render's own loop runs all three) */
+static __attribute__((noinline)) float oscillators_some(sy_t *k)
+{
+    int wrapped, w2, live = k->live;
+    float frac = 0.0f, f2, mix = 0.0f;
+    osc_t *o = k->o;
+    if (live & 1) {
+        o[0].g += o[0].g_step;
+        mix = osc_run(&o[0], &k->rng, &wrapped, &frac) * o[0].g;
+    } else {
+        osc_skip(&o[0], &wrapped, &frac);
+    }
+    int sync = wrapped && k->mode != POS1;
+    for (int i = 1; i < NOSC; i++) {
+        if (live >> i & 1) {
+            o[i].g += o[i].g_step;
+            float y = sync && k->synced[i] ? slave_sync(&o[i], &k->rng, frac) : osc_run(&o[i], &k->rng, &w2, &f2);
+            mix += y * o[i].g;
+        } else if (sync && k->synced[i]) {
+            o[i].ph = frac * o[i].dt;
+        } else {
+            osc_skip(&o[i], &w2, &f2);
+        }
+    }
+    return mix;
+}
+
 static int16_t render(cVoice *v)
 {
     sy_t *k = (sy_t *)v;
@@ -893,17 +1032,21 @@ static int16_t render(cVoice *v)
     k->elapsed++;
 
     /* oscillators: the master, then the slaves (reset at its wrap when MODE syncs) */
-    int wrapped, w2;
-    float frac = 0.0f, f2;
-    osc_t *o = k->o;
-    float mix = 0.0f;
-    o[0].g += o[0].g_step;
-    mix += osc_run(&o[0], &k->rng, &wrapped, &frac) * o[0].g;
-    int sync = wrapped && k->mode != POS1;
-    for (int i = 1; i < NOSC; i++) {
-        o[i].g += o[i].g_step;
-        float y = sync && k->synced[i] ? slave_sync(&o[i], &k->rng, frac) : osc_run(&o[i], &k->rng, &w2, &f2);
-        mix += y * o[i].g;
+    float mix;
+    if (__builtin_expect(k->live == (1 << NOSC) - 1, 1)) {
+        int wrapped, w2;
+        float frac = 0.0f, f2;
+        osc_t *o = k->o;
+        o[0].g += o[0].g_step;
+        mix = osc_run(&o[0], &k->rng, &wrapped, &frac) * o[0].g;
+        int sync = wrapped && k->mode != POS1;
+        for (int i = 1; i < NOSC; i++) {
+            o[i].g += o[i].g_step;
+            float y = sync && k->synced[i] ? slave_sync(&o[i], &k->rng, frac) : osc_run(&o[i], &k->rng, &w2, &f2);
+            mix += y * o[i].g;
+        }
+    } else {
+        mix = oscillators_some(k);
     }
 
     /* fold (2x: the midpoint with the last sample too, as the iOS synth) */
@@ -918,33 +1061,45 @@ static int16_t render(cVoice *v)
         k->prev = mix + k->fold_bias;
     }
 
-    /* filter (the iOS synth's state-variable filter, its states saturating towards +-10) */
+    /* filter: the trapezoidal state-variable filter (stable however it's swept); its band
+     * state saturates when the resonance is pushed */
     if (k->filt_on) {
-        k->f += k->f_step;
-        k->q += k->q_step;
-        float f = k->f, q = k->q;
+        float *c = k->c, *cs = k->c_step;
         float x = mix * k->in_gain;
         if (k->ftype == SL_F_LP6) {
-            k->one += f * 0.5f * (x - k->one);
-            mix = k->one;
+            float u = (x - k->one) * c[C_G1];
+            mix = u + k->one;
+            k->one = mix + u;
+        } else if (k->ftype == SL_F_LADDER) {
+            mix = ladder(k, x);
         } else {
-            k->low = soft_knee(k->low + f * k->band, F_KNEE, F_CEIL);
-            float high = x - k->low - q * k->band;
-            k->band = soft_knee(k->band + f * high, F_KNEE, F_CEIL);
+            c[C_A1] += cs[C_A1];
+            c[C_A2] += cs[C_A2];
+            c[C_A3] += cs[C_A3];
+            k->q += k->q_step;
+            float v3 = x - k->low;
+            float v1 = c[C_A1] * k->band + c[C_A2] * v3;
+            float v2 = k->low + c[C_A2] * k->band + c[C_A3] * v3;
+            k->band = soft_knee(2.0f * v1 - k->band, SAT_KNEE, SAT_CEIL);
+            k->low = 2.0f * v2 - k->low;
             switch (k->ftype) {
-            case SL_F_LP12: mix = k->low; break;
-            case SL_F_BP:   mix = k->band; break;
-            case SL_F_HP:   mix = high; break;
-            case SL_F_NOTCH: mix = high + k->low; break;
-            case SL_F_LP18:
-                k->one += f * 0.5f * (k->low - k->one);
-                mix = k->one;
+            case SL_F_LP12: mix = v2; break;
+            case SL_F_BP:   mix = v1; break;
+            case SL_F_HP:   mix = x - k->q * v1 - v2; break;
+            case SL_F_NOTCH: mix = x - k->q * v1; break;
+            case SL_F_LP18: {
+                float u = (v2 - k->one) * c[C_G1];
+                mix = u + k->one;
+                k->one = mix + u;
                 break;
-            default: {                  /* LP24: a second stage */
-                k->low2 = soft_knee(k->low2 + f * k->band2, F_KNEE, F_CEIL);
-                float h2 = k->low - k->low2 - q * k->band2;
-                k->band2 = soft_knee(k->band2 + f * h2, F_KNEE, F_CEIL);
-                mix = k->low2;
+            }
+            default: {                  /* LP24: a second stage, without resonance */
+                float w3 = v2 - k->low2;
+                float w1 = c[C_B1] * k->band2 + c[C_B2] * w3;
+                float w2 = k->low2 + c[C_B2] * k->band2 + c[C_B3] * w3;
+                k->band2 = 2.0f * w1 - k->band2;
+                k->low2 = 2.0f * w2 - k->low2;
+                mix = w2;
                 break;
             }
             }
