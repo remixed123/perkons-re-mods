@@ -51,14 +51,16 @@ and level stay with the voice; only the sound engine changes.
 | **PARAM1** | **Filter cutoff.** At 12 o'clock you hear the sound as saved; turn left to close the filter, right to open it, all the way to 20 kHz. Softer notes play a little darker: velocity closes the filter by up to an octave |
 | **PARAM2** | Its job depends on ALGO (below). At 12 o'clock you hear the sound as saved; turn either way from there |
 | **ALGO** | Chooses PARAM2's job (positions top to bottom):<br>1: **resonance**<br>2: **filter envelope amount**<br>3: **sync pitch**: moves the synced oscillators from an octave down to two octaves up. The note stays the same; only the sync tone changes |
-| **MODE** | Chooses how the oscillators sync (positions top to bottom):<br>1: **free**: no sync, the oscillators run on their own<br>2: **sync**: oscillators 2 and 3 are hard synced to oscillator 1, when their sync is on (Wave cell, SYNC)<br>3: **sync + sweep**: as 2, and the filter envelope also sweeps the synced oscillators up, giving the classic sync "yow" on every note |
+| **MODE** | **Drive** into the filter, on every sound (positions top to bottom):<br>1: **clean**: the sound as saved<br>2: **warm**: rounded, thicker, a touch of grit<br>3: **hot**: driven hard, gritty and dense<br>The level stays about the same, so it changes the tone, not the volume. It sounds especially good into the [ladder filter](#the-ladder-filter) |
 | CUTOFF, filter switch, DRIVE, FX SEND, LEVEL | The Pērkons's analog stages, as on every voice. SYNTH LAB gets a little quieter as DRIVE goes up (+3 dB with no drive, -3 dB at full), so DRIVE changes the tone more than the volume |
 
 * **The filter saturates like an analog one**: push the resonance and it growls rather than
   whistling or clipping, and it stays stable however fast it's swept.
 * **PARAM2 keeps all three values.** When ALGO gives it another job, that value stays as it was
   until you move the knob; then the knob sets it.
-* The sync presets need MODE on 2 or 3 to sound synced.
+* **Hard sync and sweep play as the sound sets them**, whatever MODE is on: an oscillator with its
+  sync on (Wave cell, SYNC) is hard synced to oscillator 1, and if it has a sweep depth (Tune
+  cell, MOD LVL) the filter envelope sweeps it up on every note, the classic sync "yow".
 
 ## The configuration page
 
@@ -72,7 +74,7 @@ Each voice playing SYNTH LAB has its own configuration page. To open it:
 The trigger keys still play the voices while the page is open, so you can hear every change.
 Press **SHIFT**, **KIT** or **MOD** to go back to the engine page.
 
-![The configuration page: presets on row 1 (hold for a starter), the cells on row 2, scale, Filter, Fold, Tweak and Mutate on row 3, root and Random on row 4](docs/configuration-page.png)
+![The configuration page: presets on row 1 (hold a pair of steps for its starter), the cells on row 2, scale, Filter, Fold, Tweak and Mutate on row 3, root and Random on row 4](docs/configuration-page.png)
 
 ### Cells: editing the sound
 
@@ -87,8 +89,8 @@ A knob only takes over once you turn it a little, so just holding a cell changes
 
 | cell | RATE | WAVE | MOD LVL | SYNC (on / off) |
 |---|---|---|---|---|
-| **Wave** (osc 1-3) | waveform: sine, triangle, saw, ramp, pulse, noise | pulse width (pulse wave) | oscillator volume | hard sync to oscillator 1 (oscillators 2 and 3; MODE must be on 2 or 3) |
-| **Tune** (osc 1-3) | octave / interval: x0.25, x0.5, x1, x1.5, x2, x3, x4, x8 | fine tune, ±50 cents | sweep depth in MODE 3, up to 4 octaves | sync detune: nudges whole-number ratios off, so the sync tone stays bright instead of just doubling oscillator 1 |
+| **Wave** (osc 1-3) | waveform: sine, triangle, saw, ramp, pulse, noise | pulse width (pulse wave) | oscillator volume | hard sync to oscillator 1 (oscillators 2 and 3) |
+| **Tune** (osc 1-3) | octave / interval: x0.25, x0.5, x1, x1.5, x2, x3, x4, x8 | fine tune, ±50 cents | sweep depth: how far the filter envelope sweeps a synced oscillator up on each note, up to 4 octaves (0: no sweep) | sync detune: nudges whole-number ratios off, so the sync tone stays bright instead of just doubling oscillator 1 |
 | **Pitch LFO**, **Volume LFO** (osc 1-3), **Cutoff LFO**, **Fold LFO** | speed, 0.05 to 20 Hz (a note division when synced) | shape: sine, triangle, saw, ramp, square, random | depth | follow the Pērkons's tempo |
 | **Filter Env**, **Amp Env** | attack time | release time | sustain level | curve: linear (off) or exponential (on) |
 | **Filter** (row 3, step 11) | type: low-pass 6, 12, 18 or 24 dB, band-pass, high-pass, notch, [ladder](#the-ladder-filter) | key tracking: how much the cutoff follows the note (4 steps) | filter envelope decay time | filter on / off |
@@ -107,34 +109,49 @@ and acid lines. Like LP24 it cuts 24 dB per octave, but it behaves differently:
 * **At full resonance it rings** at the cutoff with a pure tone you can play with PARAM1 and the
   filter envelope.
 
-Presets 1-3 use it. Try it on any bass or lead: hold the Filter cell and turn RATE fully up.
+Presets 1, 2, 3 and 8 use it. Try it on any bass or lead: hold the Filter cell and turn RATE fully up.
 
 ### Presets and starters (row 1)
 
 **Press** a preset step to load that preset. Even on the preset already chosen, a press loads
 its whole sound again and sets PARAM1 to 12 o'clock; the scale, root and Mutate stay.
 
-| step | preset | | step | preset |
-|---|---|---|---|---|
-| 1 | **Fat Analog Bass**: ladder | | 9 | **Chorus Pad** |
-| 2 | **Acid Square**: ladder | | 10 | **Classic Analog Pad** |
-| 3 | **Dark Bite Bass**: ladder | | 11 | **Ethereal Shimmer** |
-| 4 | **West Coast Bongo**: folded | | 12 | **Sync Pluck** |
-| 5 | **Aggressive Sync** | | 13 | **Sync Siren** |
-| 6 | **Hoover** | | 14 | **Polyrhythm**: three oscillators gated at 2, 3 and 5 Hz |
-| 7 | **Synced Vibrato Lead** | | 15 | **Voltage Drift**: sync with a drifting third oscillator |
-| 8 | **Tearing Lead** | | 16 | **Crosscurrent**: a slow sync sweep and a zapping oscillator |
+The **hard sync** presets also sweep their synced oscillators with the filter envelope on every
+note. MODE adds drive to any of them.
+
+| step | preset | filter, sync | the sound |
+|---|---|---|---|
+| 1 | **Fat Analog Bass** | ladder, no sync | A saw with a saw and a pulse an octave below: thick and round, with a punchy filter envelope and glide between tied notes |
+| 2 | **Acid Square** | ladder, no sync | One square wave through a resonant filter with a strong envelope, no sustain and glide between tied notes: the classic acid line |
+| 3 | **Dark Bite Bass** | ladder, no sync | A saw over a sine sub. The filter envelope runs backwards: each note starts dark and opens up, a growling bite |
+| 4 | **West Coast Bongo** | LP6, no sync | Sines and a triangle through the wavefolder, slowly moved by its LFO: a woody, percussive tone with no sustain |
+| 5 | **Aggressive Sync** | LP12, hard sync | Oscillators 2 (saw, an octave up) and 3 (pulse, two octaves up) synced to oscillator 1: a bright, biting sustained lead |
+| 6 | **Hoover** | LP12, no sync | Three saws detuned wide, one an octave down, each with its own tremolo: the moving rave hoover |
+| 7 | **Synced Vibrato Lead** | LP24, hard sync | A saw and a pulse synced to the master, vibrato on all three and glide between tied notes: a singing lead |
+| 8 | **Tearing Lead** | ladder, hard sync | Sync stacked an octave and two octaves up, then the wavefolder: a raw, tearing lead, rounded by the ladder |
+| 9 | **Chorus Pad** | LP12, no sync | Two pulse waves slightly detuned, beating like a chorus, with a slow attack and release |
+| 10 | **Classic Analog Pad** | LP24, no sync | Three saws detuned, one an octave down, with a slow attack and a slowly breathing filter |
+| 11 | **Ethereal Shimmer** | LP12, no sync | A triangle, a sine and a triangle one, two and three octaves up, each fading in and out on its own slow LFO: high and glassy, long attack and release |
+| 12 | **Sync Pluck** | LP12, hard sync | A synced saw and triangle with no sustain, the filter and a light fold moved by fast LFOs that restart on every note: a twangy pluck |
+| 13 | **Sync Siren** | LP24, hard sync | The synced saw's pitch swept up and down by its LFO, a wailing siren of sync tone over vibrato and a pulse an octave below |
+| 14 | **Polyrhythm** | LP12, no sync | Three oscillators each gated by its own LFO at 2, 3 and 5 Hz: one held note plays a rhythm |
+| 15 | **Voltage Drift** | LP24, hard sync | A triangle master with two synced saws, the highest slowly drifting in pitch, and the fold breathing in and out |
+| 16 | **Crosscurrent** | LP24, hard sync | One synced saw sweeps slowly while the other zaps fast, over a triangle with vibrato and glide between tied notes |
 
 **Hold** a preset step for half a second to load a **starter** instead: a plain sound to build
-your own from. Each group of steps has its own:
+your own from. Each pair of steps has its own, of the same kind as the presets above it, and the
+page shows its name under the pair:
 
-| hold a step in | starter | what you get |
-|---|---|---|
-| 1-4 | **Init Bass** | a saw with a square sub an octave below, a closed 24 dB low-pass with a short filter envelope |
-| 5-8 | **Init Lead** | a saw with a second saw an octave up, already set to sync (MODE 2 or 3), an open filter and a touch of glide |
-| 9-11 | **Init Pad** | three slightly detuned saws, slow attack and release, a half-open filter |
-| 12-13 | **Init Pluck** | a saw with a synced second oscillator, a short, strong filter envelope and no sustain |
-| 14-16 | **Init** | a single saw through an open filter: a blank sheet |
+| hold step | starter | filter, sync | what you get |
+|---|---|---|---|
+| 1-2 | **Init Ladder Bass** | ladder, no sync | a saw with a square sub an octave below, through the ladder with a short filter envelope |
+| 3-4 | **Init Bass** | LP24, no sync | the same bass through the 24 dB low-pass: compare the two filters |
+| 5-6 | **Init Sync Lead** | LP12, hard sync | a saw with a second saw an octave up, synced, an open filter and a touch of glide |
+| 7-8 | **Init Ladder Lead** | ladder, hard sync | the same sync lead through the ladder: rounder and warmer |
+| 9-10 | **Init Pad** | LP12, no sync | three slightly detuned saws, slow attack and release, a half-open filter |
+| 11-12 | **Init Sync Pluck** | LP12, hard sync | a saw with a synced second oscillator, a short, strong filter envelope and no sustain |
+| 13-14 | **Init Sync Pad** | LP24, hard sync | a triangle with a synced saw an octave up, slow attack and release: add a pitch LFO to the saw for a slow sync sweep |
+| 15-16 | **Init** | LP12, no sync | a single saw through an open filter: a blank sheet |
 
 As with a preset, the scale, root and Mutate stay as you set them. In every starter the LFOs,
 fold and sweep are off, but each LFO already has a useful speed and shape: hold its cell and turn **MOD LVL** to bring in vibrato, tremolo or a filter

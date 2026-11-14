@@ -13,12 +13,14 @@
  *   PARAM1 (param 2)  filter cutoff, relative to the sound (12 o'clock: the sound's own)
  *   PARAM2 (param 3)  ALGO's job, relative to the sound: resonance (position 1), filter
  *                     envelope amount (2), sync: the slaves' pitch (3)
- *   MODE              free: no sync (position 1), sync (2), sync + sweep: the filter
- *                     envelope also sweeps the slaves' pitch (3)
+ *   MODE              drive into the filter: clean (position 1), warm (2), hot (3)
+ *
+ * Sync and sweep play as the sound sets them: an oscillator with its sync on is reset by
+ * oscillator 1, and its sweep depth (if any) has the filter envelope sweep its pitch.
  *
  * The sound is 88 small values (sl_sound.h), as the kit saves it: a preset, or what the M4
  * sends ("synth-lab"). The chain: oscillators (minBLEP-corrected steps; slaves reset by the
- * master; a silent one only keeps its phase) -> mix -> fold -> filter (trapezoidal state
+ * master; a silent one only keeps its phase) -> mix -> fold -> drive (MODE) -> filter (trapezoidal state
  * variable, saturating; or a ladder) -> amp envelope -> DC blocker -> limiter -> the level for DRIVE. LFOs,
  * envelopes' filter side, glide, pitch and the filter's coefficients work every CTL samples.
  */
@@ -57,6 +59,7 @@
 #define DETENT          0.02f       /* +-2% around 12 o'clock is the sound's own value */
 #define MOVED           (82.0f / 4095.0f)   /* knob travel (2%) that hands PARAM2 a new value */
 #define DRIVE_DB        3.0f        /* the level for DRIVE: +3 dB at none, -3 dB at full */
+#define DRV_SMOOTH      0.25f       /* MODE's drive glides over ~4 control steps (no click) */
 #define DRIVE_SMOOTH    (1.0f / 960.0f)
 #define PI              3.14159265f
 #define LOG2_E          1.4426950f
@@ -78,6 +81,12 @@ enum { IDLE, ATTACK, DECAY, SUSTAIN, RELEASE };
 enum { L_PITCH0, L_VOL0 = 3, L_CUT = 6, L_FOLD, NLFO };
 enum { C_A1, C_A2, C_A3, C_B1, C_B2, C_B3, C_G1, NCOEF };     /* the filter's coefficients */
 enum { C_LG = C_A1, C_LD, C_LK };       /* the ladder's, in the resonant stage's places: pole G, 1 / (1 + k G^4), k */
+
+/* MODE's drive, by switch value (POS2 = 0 warm, POS1 = 1 clean, POS3 = 2 hot): the gain into a
+ * cubic soft clip and the wet share. Its level follows the dry sound's (DRV_AVG). */
+static const float DRV_GAIN[3] = {2.5f, 1.0f, 5.0f};
+static const float DRV_WET[3] = {1.0f, 0.0f, 1.0f};
+#define DRV_AVG         (1.0f / 2400.0f)    /* the levels before and after it: 50 ms averages */
 
 static const float OCT_RATIO[8] = {0.25f, 0.5f, 1.0f, 1.5f, 2.0f, 3.0f, 4.0f, 8.0f};
 /* tempo-synced LFOs: beats per cycle, longest to shortest (RATE up = faster) */
@@ -207,6 +216,9 @@ typedef struct {
     float q, q_step, in_gain;           /* damping (1 / Q) */
     /* fold */
     float fold, fold_step, prev;
+    /* MODE's drive: gain, make-up, wet (smoothed); the soft clip's last input and antiderivative */
+    float drv_g, drv_m, drv_w, drv_x1, drv_F1;
+    float drv_in, drv_out;              /* mean squares before and after the clip (its make-up) */
     /* out */
     float dc_x, dc_y, lim, dgain, dgain_t;
 } sy_t;
@@ -650,7 +662,7 @@ static void control(sy_t *k)
         if (absf(k->pitch_to - k->pitch) < 0.0005f)
             k->pitch = k->pitch_to;
     }
-    int sync = k->mode != POS1, sweep = k->mode == POS3;
+    const int sync = 1, sweep = 1;     /* as the sound sets them (its sync flags, sweep depths) */
     float base = k->pitch;              /* log2 Hz */
     float sync_semis = k->role[R_SYNC] < 0.5f - DETENT || k->role[R_SYNC] > 0.5f + DETENT
                      ? 36.0f * warp(k->role[R_SYNC], 1.0f / 3.0f) - 12.0f : 0.0f;
@@ -752,6 +764,16 @@ static void control(sy_t *k)
     k->fold_step = (fa - k->fold) * (1.0f / CTL);
 
     k->dgain += (k->dgain_t - k->dgain) * (DRIVE_SMOOTH * CTL);
+
+    /* MODE: the drive */
+    int m = k->mode < 3 ? k->mode : POS1;
+    k->drv_g += (DRV_GAIN[m] - k->drv_g) * DRV_SMOOTH;
+    k->drv_w += (DRV_WET[m] - k->drv_w) * DRV_SMOOTH;
+    if (k->drv_w > 0.0005f && k->drv_out > 1e-9f) {
+        /* make-up: the clip's output back to the dry sound's level, between -6 and +12 dB */
+        float t = k->drv_in > 1e-9f ? k->drv_in * rsqrtf_(k->drv_in) * rsqrtf_(k->drv_out) : 1.0f;
+        k->drv_m += (clampf(t, 0.5f, 4.0f) - k->drv_m) * DRV_SMOOTH;
+    }
 }
 
 /* Mutate: each note a few small nudges of the saved sound, worked out from it afresh (they
@@ -836,6 +858,7 @@ static void init(cVoice *v)
     k->tune_since = -1;
     k->q = 1.0f;
     k->in_gain = 1.0f;
+    k->drv_g = k->drv_m = 1.0f;
     k->rng = 0x2545f491u + (uint32_t)k->out;
     read_knobs(k);
     k->dgain = k->dgain_t;
@@ -955,6 +978,39 @@ INLINE float slave_sync(osc_t *o, uint32_t *rng, float frac)
     return y;
 }
 
+/* the drive's cubic soft clip, u - u^3 / 3 up to |u| = 1, then flat at +-2/3, and its
+ * antiderivative (for first-order antiderivative antialiasing) */
+INLINE float clip3(float u)
+{
+    if (u > 1.0f)
+        return 2.0f / 3.0f;
+    if (u < -1.0f)
+        return -2.0f / 3.0f;
+    return u - u * u * u * (1.0f / 3.0f);
+}
+
+INLINE float clip3_F(float u)
+{
+    float a = absf(u);
+    if (a > 1.0f)
+        return (2.0f / 3.0f) * a - 0.25f;
+    float u2 = u * u;
+    return u2 * (0.5f - u2 * (1.0f / 12.0f));
+}
+
+/* MODE's drive: the soft clip, antialiased (the antiderivative's difference over the step;
+ * the midpoint when the step is tiny), crossfaded in by drv_w */
+static __attribute__((noinline)) float mode_drive(sy_t *k, float x)
+{
+    float u = x * k->drv_g, F = clip3_F(u), du = u - k->drv_x1;
+    float y = du > 1e-4f || du < -1e-4f ? (F - k->drv_F1) / du : clip3(0.5f * (u + k->drv_x1));
+    k->drv_x1 = u;
+    k->drv_F1 = F;
+    k->drv_in += (x * x - k->drv_in) * DRV_AVG;
+    k->drv_out += (y * y - k->drv_out) * DRV_AVG;
+    return x + k->drv_w * (y * k->drv_m - x);
+}
+
 /* tanh(x) (Pade, exact at +-3, flat beyond) */
 INLINE float tanhf_(float x)
 {
@@ -998,7 +1054,7 @@ static __attribute__((noinline)) float oscillators_some(sy_t *k)
     } else {
         osc_skip(&o[0], &wrapped, &frac);
     }
-    int sync = wrapped && k->mode != POS1;
+    int sync = wrapped;
     for (int i = 1; i < NOSC; i++) {
         if (live >> i & 1) {
             o[i].g += o[i].g_step;
@@ -1031,7 +1087,7 @@ static int16_t render(cVoice *v)
     }
     k->elapsed++;
 
-    /* oscillators: the master, then the slaves (reset at its wrap when MODE syncs) */
+    /* oscillators: the master, then the slaves (those with sync on: reset at its wrap) */
     float mix;
     if (__builtin_expect(k->live == (1 << NOSC) - 1, 1)) {
         int wrapped, w2;
@@ -1039,7 +1095,7 @@ static int16_t render(cVoice *v)
         osc_t *o = k->o;
         o[0].g += o[0].g_step;
         mix = osc_run(&o[0], &k->rng, &wrapped, &frac) * o[0].g;
-        int sync = wrapped && k->mode != POS1;
+        int sync = wrapped;
         for (int i = 1; i < NOSC; i++) {
             o[i].g += o[i].g_step;
             float y = sync && k->synced[i] ? slave_sync(&o[i], &k->rng, frac) : osc_run(&o[i], &k->rng, &w2, &f2);
@@ -1060,6 +1116,10 @@ static int16_t render(cVoice *v)
     } else {
         k->prev = mix + k->fold_bias;
     }
+
+    /* MODE: drive into the filter */
+    if (k->drv_w > 0.0005f)
+        mix = mode_drive(k, mix);
 
     /* filter: the trapezoidal state-variable filter (stable however it's swept); its band
      * state saturates when the resonance is pushed */

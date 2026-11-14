@@ -16,7 +16,7 @@ from perkons.voicemap import remap  # noqa: E402
 SR = 48000
 POS1, POS2, POS3 = 1, 0, 2          # switch values for panel positions 1, 2, 3
 RES, ENV, SYNC = POS1, POS2, POS3   # ALGO: PARAM2's job
-FREE, SYNCED, SWEEP = POS1, POS2, POS3          # MODE
+CLEAN, WARM, HOT = POS1, POS2, POS3             # MODE: the drive
 DRONE = 4095
 PRESETS = ['Fat Analog Bass', 'Acid Square', 'Dark Bite Bass', 'West Coast Bongo', 'Aggressive Sync',
            'Hoover', 'Synced Vibrato Lead', 'Tearing Lead', 'Chorus Pad', 'Classic Analog Pad',
@@ -122,7 +122,7 @@ class SynthLab:
         e.send(2, self.msg['synth-lab-live'], bytes([t & 255, t >> 8, *drive]))
         e.pump()
 
-    def play(self, e, params, algo=RES, mode=SYNCED, note=36, vel=127, n=4800, out=0, trig=True):
+    def play(self, e, params, algo=RES, mode=CLEAN, note=36, vel=127, n=4800, out=0, trig=True):
         voices = [{'params': [2048] * 4} for _ in range(4)]
         voices[out] = {'params': list(params), 'algo': algo, 'mode': mode}
         e.send_voice_state(voices)

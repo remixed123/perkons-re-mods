@@ -13,8 +13,9 @@
  *
  * The configuration page: a long press on a voice's Synth Lab step on voice-map's engine page.
  *   row 1   presets 1-16 (a press, even on the one chosen, gives the preset's whole sound and
- *           sets PARAM1 to 12 o'clock; the scale, root and Mutate stay; held: the group's
- *           starter: 1-4 Init Bass, 5-8 Init Lead, 9-11 Init Pad, 12-13 Init Pluck, 14-16 Init)
+ *           sets PARAM1 to 12 o'clock; the scale, root and Mutate stay; held: the pair's
+ *           starter: 1-2 Init Ladder Bass, 3-4 Init Bass, 5-6 Init Sync Lead, 7-8 Init Ladder Lead,
+ *           9-10 Init Pad, 11-12 Init Sync Pluck, 13-14 Init Sync Pad, 15-16 Init)
  *   row 2   cells: oscillator 1 (1-4), 2 (5-8), 3 (9-12): Wave, Tune, Pitch LFO, Volume LFO;
  *           13-16: Filter Env, Amp Env, Cutoff LFO, Fold LFO
  *   row 3   scales (1-10), cells Filter (11) and Fold (12), Tweak light, medium, wild (13-15;
@@ -816,10 +817,10 @@ static void set_knob(int v, int slot, uint32_t x)
     FW_U8(vs + FW_VS_CATCH + slot) = FW_U8(SYM_device_config + FW_DC_POT_CATCH);
 }
 
-/* the starter a hold on preset step i loads: 1-4, 5-8, 9-11, 12-13, 14-16 */
+/* the starter a hold on preset step i loads: one per pair of steps */
 static int starter_of(int i)
 {
-    return i < 4 ? 0 : i < 8 ? 1 : i < 11 ? 2 : i < 13 ? 3 : 4;
+    return (i >> 1) & (SL_NSTARTER - 1);
 }
 
 /* a preset (or, held, its group's starter) for the voice */

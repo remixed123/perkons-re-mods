@@ -178,7 +178,7 @@ class TestSynthLabPage(unittest.TestCase):
         self.assertEqual(self.slot(r, 1, VS_BASE, PARAM1), 2048 << 4, 'PARAM1 to 12 o\'clock')
 
     def test_a_held_preset_step_gives_its_groups_starter(self):
-        for step, j in ((0, 0), (3, 0), (4, 1), (8, 2), (10, 2), (11, 3), (12, 3), (13, 4), (15, 4)):
+        for step, j in ((0, 0), (1, 0), (2, 1), (5, 2), (6, 3), (9, 4), (10, 5), (13, 6), (15, 7)):
             with self.subTest(step=step):
                 r = self.rig()
                 self.open_page(r, voice=2)
@@ -206,7 +206,7 @@ class TestSynthLabPage(unittest.TestCase):
                 self.assertEqual(self.sound(r, 2), before)
 
     def test_starters_have_no_modulation_on(self):
-        for j in range(5):
+        for j in range(8):
             x = starter(j)
             with self.subTest(starter=j):
                 for at in (8, 12, 24, 28, 40, 44, CLFO, FLFO):

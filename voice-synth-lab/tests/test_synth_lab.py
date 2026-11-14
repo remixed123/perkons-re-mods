@@ -1,6 +1,7 @@
 """Synth Lab on the M7, through main()'s message loop and the real audio callback, as a
 voice-map engine: the wiring, the presets, pitch and scale, sync, the gate, the level, CPU.
 Needs arm-none-eabi-gcc."""
+import math
 import shutil
 import tempfile
 import unittest
@@ -8,8 +9,8 @@ import unittest
 from fixtures import build_patched
 from perkons import verify
 from perkons.patch import PatchError
-from sy_rig import (CUTOFF, DRONE, ENV, FENV, FILT_ON, FOLD_ON, FREE, LEVEL, OCT, OSC_N, OSYNC, PLFO, PRESETS,
-                    RES, SAW, SCALE, SWEEP, SYNC, SYNCED, VLFO, WAVE, SynthLab, cents, f0, pack, peak, rms,
+from sy_rig import (CLEAN, CUTOFF, DRONE, ENV, FENV, FILT_ON, FOLD_ON, HOT, LEVEL, OSWEEP, OCT, OSC_N, OSYNC, PLFO, PRESETS,
+                    RES, SAW, SCALE, SYNC, VLFO, WARM, WAVE, SynthLab, cents, f0, pack, peak, rms,
                     unpack, WIDTH)
 
 MID = 2048
@@ -119,7 +120,7 @@ class TestSynthLab(unittest.TestCase):
         return [int(x) for x in rows[i].replace('\n', ' ').split(',') if x.strip()]
 
     # -- pitch ----------------------------------------------------------------------------
-    def steady(self, v, tune=0, note=36, mode=FREE, p2=MID, algo=RES, n=9600):
+    def steady(self, v, tune=0, note=36, mode=CLEAN, p2=MID, algo=RES, n=9600):
         e = self.machine()
         self.sl.send_sound(e, v)
         self.play(e, [tune, DRONE, MID, MID], mode=mode, algo=algo, n=64, trig=False)  # the job first
@@ -151,8 +152,9 @@ class TestSynthLab(unittest.TestCase):
         v[OSC_N + OCT] = 4          # slave x2 (x2.3 with the ratio mode)
         v[OSC_N + OSYNC] = 1
         v[0 + LEVEL] = 0            # master silent: the slave alone, at the master's pitch
-        synced = self.steady(v, mode=SYNCED)[2400:]
-        free = self.steady(v, mode=FREE)[2400:]
+        synced = self.steady(v)[2400:]                              # sync as the sound sets it
+        v[OSC_N + OSYNC] = 0
+        free = self.steady(v)[2400:]
         self.assertAlmostEqual(period(synced), SR_C2, delta=3)       # the master's period
         self.assertNotAlmostEqual(period(free), SR_C2, delta=20)
 
@@ -161,8 +163,9 @@ class TestSynthLab(unittest.TestCase):
         v[OSC_N + OCT] = 4
         v[OSC_N + OSYNC] = 1
         v[0 + LEVEL] = 0
-        a = self.steady(v, mode=SYNCED, algo=SYNC, p2=MID)[2400:]
-        b = self.steady(v, mode=SYNCED, algo=SYNC, p2=4095)[2400:]
+        v[OSC_N + OSWEEP] = 0           # no sweep: PARAM2 alone moves the timbre
+        a = self.steady(v, algo=SYNC, p2=MID)[2400:]
+        b = self.steady(v, algo=SYNC, p2=4095)[2400:]
         self.assertAlmostEqual(period(b), SR_C2, delta=3)
         self.assertGreater(abs(rms(a) - rms(b)) + abs(peak(a) - peak(b)), 50)
 
@@ -172,8 +175,19 @@ class TestSynthLab(unittest.TestCase):
         v[OSC_N + OCT] = 6          # x4
         v[OSC_N + OSYNC] = 1
         v[0 + LEVEL] = 0
-        x = self.steady(v, tune=4095, mode=SYNCED, n=4800)[960:]
+        x = self.steady(v, tune=4095, n=4800)[960:]
         self.assertGreater(peak(x), 1000)
+
+    def test_mode_drives_every_sound_at_about_its_level(self):
+        """MODE: clean is the sound as it was; warm and hot add harmonics at about the same level."""
+        v = plain(self._preset(0))                  # one saw, no filter: the drive alone
+        clean = self.steady(v, mode=CLEAN)[2400:]
+        for mode in (WARM, HOT):
+            with self.subTest(mode=mode):
+                x = self.steady(v, mode=mode)[2400:]
+                self.assertNotEqual(x[:960], clean[:960])
+                self.assertLess(abs(20 * math.log10(rms(x) / rms(clean))), 3.0)
+                self.assertAlmostEqual(period(x), period(clean), delta=15)      # the same note
 
     # -- gate --------------------------------------------------------------------------------
     def test_gate_releases_and_drone_holds(self):
@@ -217,7 +231,7 @@ class TestSynthLab(unittest.TestCase):
                 if trig and e.class_of(e.slot(o)) == 'cSynthLab':
                     self.sl.send_sound(e, self.heavy(), out=o)
                 if trig:
-                    self.play(e, params, mode=SWEEP, out=o, n=64)
+                    self.play(e, params, mode=HOT, out=o, n=64)
             e.audio(960)
             runs.append(self.insns(e))
         return runs[0] - runs[1], runs[0] - runs[2]

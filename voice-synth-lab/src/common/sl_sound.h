@@ -59,7 +59,7 @@ enum { SL_W_SINE, SL_W_TRI, SL_W_SAW, SL_W_RAMP, SL_W_PULSE, SL_W_NOISE, SL_NWAV
 enum { SL_S_SINE, SL_S_TRI, SL_S_SAW, SL_S_RAMP, SL_S_SQUARE, SL_S_RANDOM, SL_NSHAPE };
 enum { SL_F_LP6, SL_F_LP12, SL_F_LP18, SL_F_LP24, SL_F_BP, SL_F_HP, SL_F_NOTCH, SL_F_LADDER, SL_NFILT };
 #define SL_NPRESET      16
-#define SL_NSTARTER     5           /* starters: a hold on a preset step */
+#define SL_NSTARTER     8           /* starters: a hold on a preset step, one per pair of steps */
 #define SL_NSCALE       10
 #define SL_NROOT        12
 #define SL_MID          16              /* 5-bit "centre" (fine tune, env amount, PARAM2's jobs) */
