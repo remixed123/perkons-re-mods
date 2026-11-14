@@ -161,12 +161,13 @@ wobble. If you hold one by mistake, hold a Tweak or Random step to undo it.
 
 * **Random** makes a new sound of the current preset's kind (bass, lead, pad, keys, FX):
   **Mild** stays close to the preset, **Wild** redraws parts of it (waveforms, octaves, sync,
-  LFOs, fold), **Recipe** builds a fresh sound from a recipe of that kind, **All** picks one of
-  the three. Each press is a new sound; press the preset to go back, or hold a Random step
-  to undo the last Random or Tweak.
+  LFOs, fold, the filter type), **Recipe** builds a fresh sound from a recipe of that kind,
+  **All** picks one of the three. Wild and Recipe often pick the [ladder](#the-ladder-filter)
+  for basses and leads. Each press is a new sound; press the preset to go back, or hold a
+  Random step to undo the last Random or Tweak.
 * **Tweak** moves the sound playing a little (light), more (medium) or a lot (wild); wild can
-  also change waveforms, octaves and sync. Presses add up. Hold a Tweak step to undo the last
-  Tweak or Random.
+  also change waveforms, octaves and sync, and swap a low-pass filter for the ladder or back.
+  Presses add up. Hold a Tweak step to undo the last Tweak or Random.
 * **Mutate** gives every note a small variation of the sound: filter, pulse widths, levels,
   detune, envelopes, fold. Each note varies from the saved sound, so a pattern keeps moving
   without drifting away.

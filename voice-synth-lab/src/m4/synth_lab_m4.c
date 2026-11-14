@@ -478,6 +478,8 @@ static void recipe(uint8_t *v, int cat)
             lfo(v, SL_OSC(1) + SL_VLFO, between(6, 12), SL_S_SINE, between(4, 9), 0);
             v[SL_AENV + SL_E_SUS] = 26;
         }
+        if ((r == 0 || r == 3) && chance(33))   /* sync stack, reese: a third through the ladder */
+            v[SL_FILT_TYPE] = SL_F_LADDER;
         break;
     case CAT_LEAD:
         env(v, SL_AENV, between(0, 2), between(10, 13), between(22, 28), 0);
@@ -521,6 +523,8 @@ static void recipe(uint8_t *v, int cat)
             v[SL_RES] = (uint8_t)between(14, 22);
             v[SL_TRIM] = 6;
         }
+        if (r != 2 && chance(33))           /* sync, detuned, screamer: a third through the ladder */
+            v[SL_FILT_TYPE] = SL_F_LADDER;
         break;
     case CAT_PAD:
         env(v, SL_AENV, between(14, 19), between(18, 23), between(22, 28), 0);
@@ -732,6 +736,9 @@ static void tweak(uint8_t *v, int amount)
         }
         if (chance(15))
             v[SL_FLFO + SL_L_SHAPE] = (uint8_t)rr(SL_NSHAPE);
+        int t = v[SL_FILT_TYPE];            /* a low-pass to the ladder, or back */
+        if (chance(10) && ((t >= SL_F_LP12 && t <= SL_F_LP24) || t == SL_F_LADDER))
+            v[SL_FILT_TYPE] = (uint8_t)(t == SL_F_LADDER ? between(SL_F_LP12, SL_F_LP24) : SL_F_LADDER);
     }
 }
 
