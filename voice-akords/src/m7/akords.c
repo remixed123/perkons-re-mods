@@ -66,7 +66,7 @@
 #define LS_A2           0.9518288f
 #define LS_FADE         0.002f
 #ifndef SUS_THR
-#define SUS_THR         2500.0f     /* the sustained-level limiter: the output's 20 ms RMS held near */
+#define SUS_THR         1500.0f     /* the sustained-level limiter: the output's 20 ms RMS held near */
 #endif                              /*   this (dense held chords overload the voice's analog stage) */
 #define SUS_AVG         (1.0f / 960.0f)     /* its level: a 20 ms average of the square */
 #define SUS_ATT         (1.0f / 480.0f)     /* turned down over ~10 ms (during the chord's attack) */
