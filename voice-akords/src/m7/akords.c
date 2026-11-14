@@ -65,6 +65,12 @@
 #define LS_A1           (-1.9506395f)
 #define LS_A2           0.9518288f
 #define LS_FADE         0.002f
+#ifndef SUS_THR
+#define SUS_THR         2500.0f     /* the sustained-level limiter: the output's 20 ms RMS held near */
+#endif                              /*   this (dense held chords overload the voice's analog stage) */
+#define SUS_AVG         (1.0f / 960.0f)     /* its level: a 20 ms average of the square */
+#define SUS_ATT         (1.0f / 480.0f)     /* turned down over ~10 ms (during the chord's attack) */
+#define SUS_REL         (1.0f / 14400.0f)   /* back up over ~300 ms */
 #define F_KNEE          7.0f        /* the filter's states: untouched below this, then bent */
 #define F_CEIL          10.0f       /*   smoothly towards this (saturation, not a hard clip) */
 #define DC_R            0.9995f     /* DC blocker pole (~4 Hz) */
@@ -309,6 +315,7 @@ typedef struct {
     int32_t hold;                       /* SOUND_HOLD: the knobs set nothing yet */
     int8_t vlast[NNOTE];                /* the last chord before Spread and Bass drop */
     float ls_z1, ls_z2, ls_k;           /* LP24's low shelf: its states, how much of it is heard */
+    float sus_ms, sus_cut;              /* the sustained-level limiter: mean square, gain taken off */
 } ak_t;
 
 _Static_assert(__builtin_offsetof(ak_t, algo) == OFF_cVoice_algo, "algo");
@@ -337,6 +344,16 @@ INLINE float clampf(float x, float lo, float hi)
 
 /* a soft knee: x below `knee` unchanged, above it bent towards `ceil` (never reached), with
  * no corner at the knee (the slope runs on from 1), so a hot signal is rounded, not squared */
+/* 1 / sqrt(x), x > 0: the bit estimate and two Newton steps (~5e-6 relative) */
+INLINE float rsqrtf_(float x)
+{
+    union { float f; uint32_t u; } v = {x};
+    v.u = 0x5f3759dfu - (v.u >> 1);
+    float y = v.f;
+    y *= 1.5f - 0.5f * x * y * y;
+    return y * (1.5f - 0.5f * x * y * y);
+}
+
 INLINE float soft_knee(float x, float knee, float ceil)
 {
     float m = x < 0.0f ? -x : x;
@@ -1569,6 +1586,13 @@ static int16_t render(cVoice *v)
     if (a->lim > LIM_THR)
         d *= LIM_THR / a->lim;
     d = soft_knee(d, CLIP_KNEE, CLIP_CEIL);
+    /* the sustained-level limiter: a thick held chord sits near its peak all the time, which the
+     * voice's analog stage can't take (a crackle); held at SUS_THR, sparser sounds untouched.
+     * Before the level for DRIVE, so DRIVE keeps its +-3 dB */
+    a->sus_ms += (d * d - a->sus_ms) * SUS_AVG;
+    float cut = a->sus_ms > SUS_THR * SUS_THR ? 1.0f - SUS_THR * rsqrtf_(a->sus_ms) : 0.0f;
+    a->sus_cut += (cut - a->sus_cut) * (cut > a->sus_cut ? SUS_ATT : SUS_REL);
+    d *= 1.0f - a->sus_cut;
     a->dgain += (a->dgain_t - a->dgain) * DRIVE_SMOOTH;     /* the level for DRIVE */
     d *= a->dgain;
     float out = clampf(d, -32767.0f, 32767.0f);
