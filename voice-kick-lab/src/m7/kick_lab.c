@@ -25,7 +25,10 @@
 #define NOTE_REF        36          /* trigger note meaning "no transposition" */
 #define LEVEL           21000.0f    /* a full-scale body at velocity 127, before the preset's TRIM */
 #define LIM_THR         16000.0f    /* the output limiter: peaks held at this (the stock kick's highest) */
-#define LIM_REL         0.999583f   /* instant attack, 50 ms release */
+#define LIM_ATT         0.067f      /* 0.3 ms attack (no instant grab: it would square the first peak) */
+#define LIM_REL         0.999583f   /* 50 ms release */
+#define CLIP_KNEE       15200.0f    /* after the limiter, a soft clip rounds what its attack lets */
+#define CLIP_CEIL       16800.0f    /*   through: untouched below the knee, never above the ceiling */
 #define NOISE_LEVEL     0.6f        /* the noise layer against the body */
 #define DRONE_AT        0.95f       /* DECAY from here up: drone (the knobs stop short of their ends) */
 #define DECAY_MIN       0.03f       /* s */
@@ -54,6 +57,8 @@
 #define RB_A1           120
 #define RB_LEN          (RB_C0 + RB_C1 + RB_C2 + RB_C3 + RB_A0 + RB_A1)
 #define Q_LINE          8192.0f     /* line sample scale: +-4 full scale */
+#define LINE_KNEE       3.0f        /* what goes into a line: untouched below this, then bent */
+#define LINE_CEIL       4.0f        /*   smoothly towards full scale (no hard clip in a feedback loop) */
 _Static_assert(OBJ_MAX + 2 * (DL_LEN + RB_LEN) <= ARENA, "the lines fit the arena");
 
 /* switch values are 1, 0, 2 for panel positions 1, 2, 3 */
@@ -356,6 +361,17 @@ static float exp2f_(float x)
     return p * e.v;
 }
 
+/* identity up to `knee`, then bends smoothly towards `ceil` (never reaches it) */
+static inline float soft_knee(float x, float knee, float ceil)
+{
+    float m = x < 0.0f ? -x : x;
+    if (m <= knee)
+        return x;
+    float r = ceil - knee, u = (m - knee) / r;
+    float y = knee + r * u / (1.0f + u);
+    return x < 0.0f ? -y : y;
+}
+
 static inline float tanh_(float x)
 {
     if (x > 3.0f)
@@ -420,7 +436,7 @@ static inline float noise_of(uint32_t s)
 
 static inline int16_t to_line(float x)
 {
-    x *= Q_LINE;
+    x = soft_knee(x, LINE_KNEE, LINE_CEIL) * Q_LINE;
     return (int16_t)(x > 32767.0f ? 32767.0f : (x < -32767.0f ? -32767.0f : x));
 }
 
@@ -925,13 +941,15 @@ static void init(cVoice *v)
 
 /* ---- audio (per sample) ---------------------------------------------------------------- */
 
-/* the last stage: peaks above LIM_THR are turned down at once, and the gain comes back
- * over ~150 ms */
+/* the last stage: peaks above LIM_THR are turned down within ~0.3 ms, and the gain comes back
+ * over ~50 ms; then a soft clip rounds what got through before the limiter caught up */
 static float limiter(kl_t *k, float x)
 {
     float m = absf(x);
-    k->lim = m > k->lim ? m : k->lim * LIM_REL;
-    return k->lim > LIM_THR ? x * (LIM_THR / k->lim) : x;
+    k->lim = m > k->lim ? k->lim + (m - k->lim) * LIM_ATT : k->lim * LIM_REL;
+    if (k->lim > LIM_THR)
+        x *= LIM_THR / k->lim;
+    return soft_knee(x, CLIP_KNEE, CLIP_CEIL);
 }
 
 static int16_t render(cVoice *v)
