@@ -16,6 +16,8 @@ chord in your scale. The name is Latvian for "chord".
   the formant becomes the formant shift, from a bigger voice to a smaller one. Pushed hard,
   cutoff and resonance up, the filter saturates like an analog one, warm up to a scream,
   instead of clipping.
+  Thick, held chords are kept to a level the voice's analog stage handles cleanly, so
+  they don't crackle; lighter sounds are left as they are.
 * **16 presets**, from bass and pads to stabs, Reese and formant choirs, and **Random** to
   make new sounds of the same kind. Every sound is saved with the kit.
 * **Strum, Spread and Bass drop** change how the chord is played: notes one after another,
