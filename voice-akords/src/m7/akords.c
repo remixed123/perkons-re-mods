@@ -51,7 +51,8 @@
 #define HYST            0.2f        /* TUNE: hysteresis, fraction of a step each side */
 #define MOVED           (82.0f / 4095.0f)   /* knob travel (2%) that hands it a new job */
 #define LEVEL           8000.0f     /* peak scale, as the stock tonal voices */
-#define MIX             (LEVEL * 0.3f)      /* per-slot output scale (3 notes, 2 oscillators) */
+#define MIX             (LEVEL * 0.15f)     /* per-slot output scale (3 notes, 2 oscillators), 6 dB
+                                               below the first voicing: held chords crackled */
 #define LIM_THR         9000.0f     /* the output limiter: peaks held near this (Zibens ~8500), */
 #define LIM_ATT         0.067f      /* 0.3 ms attack (no instant grab: it would square the peaks) */
 #define LIM_REL         0.999861f   /* 150 ms release */
@@ -65,6 +66,25 @@
 #define LS_A1           (-1.9506395f)
 #define LS_A2           0.9518288f
 #define LS_FADE         0.002f
+/* the bass guard: a 12 dB/oct high-pass at 150 Hz on the output (RBJ, Q 0.707). Held chords
+ * keep a lot of low end, which with the level crackled through the Perkons's analog stages */
+#define BG_B0           0.986211795f
+#define BG_B1           (-1.972423590f)
+#define BG_A1           (-1.972233470f)
+#define BG_A2           0.972613710f
+/* the chorus (an ensemble, as the classic poly synths'): two taps of a short delay, swaying in
+ * opposite directions around CH_BASE, mixed with the dry sound. Per amount (the sound's
+ * chorus 1-3): the sway's rate (Hz), its depth (ms either way) and the wet share */
+#define CH_LEN          512         /* the line (a power of 2), 10.7 ms */
+#define CH_BASE         168.0f      /* 3.5 ms */
+static const float CH_RATE[4] = {0.0f, 0.5f, 0.8f, 0.45f};
+static const float CH_DEPTH[4] = {0.0f, 1.0f, 1.6f, 2.2f};
+static const float CH_WET[4] = {0.0f, 0.35f, 0.5f, 0.6f};
+#define LP2_Q           1.0f        /* LP24's second stage: no resonance of its own (Q 1), so the
+                                       resonant peak is one stage's, not two multiplied */
+#define KNOB_SMOOTH     0.0167f     /* knob positions into the filter: ~20 ms (per COEF_EVERY), so a
+                                       knob's reading wobbling a few counts doesn't step the cutoff */
+#define VEL_CUT_OCT     1.0f        /* velocity -> cutoff: 127 the sound's own, 0 an octave down */
 /* 2x oversampling around the SVF filter's saturation, so the harmonics its bending makes
  * above 24 kHz are filtered out instead of folding back down as
  * aliases: a 27-tap halfband (Kaiser, beta 5) up and down, flat to 18 kHz, -1 dB at 20 kHz,
@@ -131,60 +151,61 @@ typedef struct {
     float f_att, f_dec, f_sus, f_rel;
     float glide;                        /* seconds, 0 = off */
     float gain;                         /* level trim: the presets peak alike */
+    uint8_t chorus;                     /* 0 off, 1 light, 2 medium, 3 deep */
 } preset_t;
 
 static const preset_t PRESETS[NPRESET] = {
     /* Bass */
     {{W_SAW, W_PULSE}, {-1, -1}, {0, 5}, {0.9f, 0.55f}, {0.5f, 0.35f}, F_LP24,
-     1400, 0.35f, 0.45f, 0.3f, 0.003f, 0.25f, 0.55f, 0.12f, 0.004f, 0.22f, 0.15f, 0.15f, 0, 0.9f},
+     1400, 0.35f, 0.45f, 0.3f, 0.003f, 0.25f, 0.55f, 0.12f, 0.004f, 0.22f, 0.15f, 0.15f, 0, 0.9f, 0},
     /* Pad */
     {{W_SAW, W_SAW}, {0, 0}, {-6, 8}, {0.7f, 0.7f}, {0.5f, 0.5f}, F_LP24,
-     2200, 0.18f, 0.35f, 0.5f, 0.6f, 0.8f, 0.85f, 1.2f, 0.9f, 0.8f, 0.6f, 1.2f, 0, 0.95f},
+     2200, 0.18f, 0.35f, 0.5f, 0.6f, 0.8f, 0.85f, 1.2f, 0.9f, 0.8f, 0.6f, 1.2f, 0, 0.95f, 2},
     /* Lead */
     {{W_SAW, W_PULSE}, {0, 0}, {0, 4}, {0.85f, 0.6f}, {0.5f, 0.3f}, F_LP24,
-     4200, 0.3f, 0.4f, 0.7f, 0.006f, 0.3f, 0.75f, 0.25f, 0.006f, 0.35f, 0.5f, 0.25f, 0.08f, 0.8f},
+     4200, 0.3f, 0.4f, 0.7f, 0.006f, 0.3f, 0.75f, 0.25f, 0.006f, 0.35f, 0.5f, 0.25f, 0.08f, 0.8f, 1},
     /* Keys */
     {{W_SAW, W_TRI}, {0, 1}, {0, 0}, {0.8f, 0.5f}, {0.5f, 0.5f}, F_LP24,
-     3600, 0.15f, 0.5f, 0.6f, 0.004f, 0.5f, 0.35f, 0.35f, 0.004f, 0.45f, 0.2f, 0.35f, 0, 0.87f},
+     3600, 0.15f, 0.5f, 0.6f, 0.004f, 0.5f, 0.35f, 0.35f, 0.004f, 0.45f, 0.2f, 0.35f, 0, 0.87f, 1},
     /* Pluck */
     {{W_SAW, W_SAW}, {0, 0}, {0, 10}, {0.85f, 0.6f}, {0.5f, 0.5f}, F_LP24,
-     2600, 0.4f, 0.6f, 0.5f, 0.002f, 0.22f, 0.0f, 0.18f, 0.002f, 0.18f, 0.0f, 0.18f, 0, 0.66f},
+     2600, 0.4f, 0.6f, 0.5f, 0.002f, 0.22f, 0.0f, 0.18f, 0.002f, 0.18f, 0.0f, 0.18f, 0, 0.66f, 0},
     /* Stab */
     {{W_SAW, W_SAW}, {0, 0}, {-8, 8}, {0.8f, 0.8f}, {0.5f, 0.5f}, F_LP24,
-     1500, 0.42f, 0.55f, 0.4f, 0.004f, 0.28f, 0.0f, 0.12f, 0.004f, 0.18f, 0.0f, 0.12f, 0, 0.57f},
+     1500, 0.42f, 0.55f, 0.4f, 0.004f, 0.28f, 0.0f, 0.12f, 0.004f, 0.18f, 0.0f, 0.12f, 0, 0.57f, 0},
     /* Hollow */
     {{W_PULSE, W_PULSE}, {0, 0}, {-10, 10}, {0.8f, 0.7f}, {0.5f, 0.25f}, F_LP24,
-     2800, 0.2f, 0.35f, 0.6f, 0.02f, 0.4f, 0.8f, 0.4f, 0.03f, 0.5f, 0.55f, 0.4f, 0, 0.61f},
+     2800, 0.2f, 0.35f, 0.6f, 0.02f, 0.4f, 0.8f, 0.4f, 0.03f, 0.5f, 0.55f, 0.4f, 0, 0.61f, 2},
     /* Reese */
     {{W_SAW, W_SAW}, {-1, -1}, {-22, 22}, {0.9f, 0.9f}, {0.5f, 0.5f}, F_LP24,
-     900, 0.25f, 0.3f, 0.25f, 0.005f, 0.4f, 0.9f, 0.2f, 0.01f, 0.5f, 0.6f, 0.25f, 0.04f, 0.59f},
+     900, 0.25f, 0.3f, 0.25f, 0.005f, 0.4f, 0.9f, 0.2f, 0.01f, 0.5f, 0.6f, 0.25f, 0.04f, 0.59f, 0},
     /* Organ */
     {{W_TRI, W_SINE}, {0, 1}, {0, 0}, {0.8f, 0.7f}, {0.5f, 0.5f}, F_LP24,
-     9000, 0.0f, 0.0f, 0.3f, 0.005f, 0.2f, 0.95f, 0.06f, 0.005f, 0.2f, 1.0f, 0.06f, 0, 1.0f},
+     9000, 0.0f, 0.0f, 0.3f, 0.005f, 0.2f, 0.95f, 0.06f, 0.005f, 0.2f, 1.0f, 0.06f, 0, 1.0f, 1},
     /* Bell */
     {{W_SINE, W_TRI}, {1, 2}, {0, 5}, {0.85f, 0.5f}, {0.5f, 0.5f}, F_LP24,
-     6000, 0.0f, 0.0f, 0.6f, 0.002f, 0.9f, 0.0f, 0.5f, 0.002f, 0.6f, 0.0f, 0.5f, 0, 0.97f},
+     6000, 0.0f, 0.0f, 0.6f, 0.002f, 0.9f, 0.0f, 0.5f, 0.002f, 0.6f, 0.0f, 0.5f, 0, 0.97f, 1},
     /* Air: high-pass, thin and bright; the filter envelope dips the cutoff on the attack */
     {{W_SAW, W_PULSE}, {0, 1}, {-7, 7}, {0.75f, 0.5f}, {0.5f, 0.4f}, F_HP12,
-     700, 0.3f, -0.4f, 0.5f, 0.01f, 0.6f, 0.7f, 0.5f, 0.005f, 0.4f, 0.3f, 0.4f, 0, 0.81f},
+     700, 0.3f, -0.4f, 0.5f, 0.01f, 0.6f, 0.7f, 0.5f, 0.005f, 0.4f, 0.3f, 0.4f, 0, 0.81f, 2},
     /* Choir: detuned saws, slow, an "ah" (formant) */
     {{W_SAW, W_SAW}, {0, 0}, {-9, 9}, {0.8f, 0.8f}, {0.5f, 0.5f}, F_FORMANT,
-     1342, 0.5f, 0.15f, 0.0f, 0.45f, 0.6f, 0.9f, 1.1f, 0.7f, 1.0f, 0.7f, 1.1f, 0, 1.0f},
+     1342, 0.5f, 0.15f, 0.0f, 0.45f, 0.6f, 0.9f, 1.1f, 0.7f, 1.0f, 0.7f, 1.1f, 0, 1.0f, 2},
     /* Vox: pulse and saw, the vowel opening "oh" to "ah" on each chord (formant) */
     {{W_PULSE, W_SAW}, {0, 0}, {0, 6}, {0.8f, 0.6f}, {0.3f, 0.5f}, F_FORMANT,
-     369, 0.5f, 0.6f, 0.0f, 0.01f, 0.3f, 0.8f, 0.3f, 0.02f, 0.35f, 0.25f, 0.3f, 0.03f, 1.0f},
+     369, 0.5f, 0.6f, 0.0f, 0.01f, 0.3f, 0.8f, 0.3f, 0.02f, 0.35f, 0.25f, 0.3f, 0.03f, 1.0f, 1},
     /* Talk: saw and a saw an octave up, the vowel dipping from "eh" towards "oh" and back on
      * each chord (formant) */
     {{W_SAW, W_SAW}, {0, 1}, {0, 4}, {0.85f, 0.5f}, {0.5f, 0.5f}, F_FORMANT,
-     4874, 0.5f, -0.7f, 0.0f, 0.005f, 0.4f, 0.6f, 0.25f, 0.005f, 0.25f, 0.0f, 0.2f, 0, 1.0f},
+     4874, 0.5f, -0.7f, 0.0f, 0.005f, 0.4f, 0.6f, 0.25f, 0.005f, 0.25f, 0.0f, 0.2f, 0, 1.0f, 0},
     /* Chant: a saw an octave down and a pulse, on "oh", a bigger voice (the formant shift
      * down: resonance below half), opening slowly towards "ah", with glide (formant) */
     {{W_SAW, W_PULSE}, {-1, 0}, {-5, 5}, {0.85f, 0.5f}, {0.5f, 0.3f}, F_FORMANT,
-     369, 0.25f, 0.3f, 0.0f, 0.35f, 0.8f, 0.85f, 1.2f, 1.2f, 1.0f, 0.6f, 1.2f, 0.06f, 1.0f},
+     369, 0.25f, 0.3f, 0.0f, 0.35f, 0.8f, 0.85f, 1.2f, 1.2f, 1.0f, 0.6f, 1.2f, 0.06f, 1.0f, 1},
     /* Wah: saw and a saw an octave up; each chord's vowel jumps from "oo" to "ah" and falls
      * back (formant) */
     {{W_SAW, W_SAW}, {0, 1}, {0, 7}, {0.85f, 0.45f}, {0.5f, 0.5f}, F_FORMANT,
-     130, 0.6f, 1.0f, 0.0f, 0.005f, 0.5f, 0.4f, 0.25f, 0.03f, 0.25f, 0.0f, 0.2f, 0, 1.0f},
+     130, 0.6f, 1.0f, 0.0f, 0.005f, 0.5f, 0.4f, 0.25f, 0.03f, 0.25f, 0.0f, 0.2f, 0, 1.0f, 0},
 };
 
 /* ---- scales (semitones from the root), in knob order --------------------------------- */
@@ -274,7 +295,10 @@ typedef struct {
     int32_t delay[NNOTE];               /* Strum: samples before each note starts */
     float sgain[NNOTE];                 /* Strum: each note's fade-in */
     float f2, q2;                       /* the SVF's coefficients at 96 kHz (same poles as f, q) */
+    float f2b, q2b;                     /* LP24's second stage at 96 kHz (f, LP2_Q) */
     os_t os;                            /* the SVF's 2x oversampling */
+    float vcut;                         /* velocity -> cutoff (a ratio; 1 at velocity 127) */
+    float kv[3];                        /* the knobs' cutoff, resonance, env amount, smoothed */
 } slot_t;
 
 typedef struct {
@@ -332,6 +356,12 @@ typedef struct {
     int8_t vlast[NNOTE];                /* the last chord before Spread and Bass drop */
     float ls_z1, ls_z2, ls_k;           /* LP24's low shelf: its states, how much of it is heard */
     float sus_ms, sus_cut;              /* the sustained-level limiter: mean square, gain taken off */
+    float bg_z1, bg_z2;                 /* the bass guard's states */
+    float ch_buf[CH_LEN];               /* the chorus: its line, write position, sway phase, */
+    int32_t ch_w;                       /*   amount (0-3), wet share now (smoothed) */
+    float ch_ph;
+    int32_t ch_amt;
+    float ch_k;
 } ak_t;
 
 _Static_assert(__builtin_offsetof(ak_t, algo) == OFF_cVoice_algo, "algo");
@@ -1047,6 +1077,14 @@ static float note_drift(ak_t *a)
     return exp2f_(r * DRIFT_CENTS * (1.0f / 1200.0f));
 }
 
+/* an oscillator's start phase: random, as an analog poly's free-running oscillators (each
+ * chord starts differently, without every note's edge lined up at once) */
+static float rnd_phase(ak_t *a)
+{
+    a->rng = a->rng * 1664525u + 1013904223u;
+    return (float)(a->rng >> 8) * (1.0f / 16777216.0f);
+}
+
 /* the level for a chord of cnt notes: about the same loudness as 3 */
 static float count_norm(int cnt)
 {
@@ -1119,6 +1157,7 @@ static void decode(const uint8_t *f, preset_t *pr)
     pr->f_rel = ak_time(f[AK_FENV + AK_E_REL]);
     pr->glide = (float)f[AK_GLIDE] * 0.01f;
     pr->gain = 0.5f + (float)f[AK_TRIM] * (1.0f / 62.0f);
+    pr->chorus = f[AK_CHORUS];
 }
 
 #define STRUM_SAMPLES   2160        /* Strum: 45 ms between the notes */
@@ -1150,7 +1189,7 @@ static void start_slot(ak_t *a, slot_t *s, const chord_t *c)
             float to = clampf(mtof((float)c->note[i]) * ratio, 8.0f, 12000.0f) / SR;
             int f = from_note(c, i);
             float from = glide && f >= 0 ? clampf(mtof((float)f) * ratio, 8.0f, 12000.0f) / SR : to;
-            s->osc[i][k].phase = 0.0f;
+            s->osc[i][k].phase = rnd_phase(a);
             s->osc[i][k].inc = from;
             s->osc[i][k].target = to;
         }
@@ -1170,14 +1209,18 @@ static void start_slot(ak_t *a, slot_t *s, const chord_t *c)
     adsr_start(&s->fenv, pr->f_att, pr->f_dec, pr->f_sus, pr->f_rel, (float)COEF_EVERY);
     s->low = s->band = s->low2 = s->band2 = s->low3 = s->band3 = 0.0f;
     s->ff[0] = s->ff[1] = s->ff[2] = 0.0f;
-    s->f = s->f2 = 0.0f;
+    s->f = s->f2 = s->f2b = 0.0f;
     s->q = s->q2 = 1.0f;
+    s->q2b = LP2_Q;
     os_clear(&s->os);
     for (int b = 0; b < 3; b++) {
         s->fa[b][0] = 1.0f;
         s->fa[b][1] = s->fa[b][2] = 0.0f;
     }
     s->in_gain = 1.0f;
+    s->vcut = exp2f_((c->amp - 1.0f) * VEL_CUT_OCT);
+    for (int i = 0; i < 3; i++)         /* V_CUTOFF, V_RES, V_ENV: start where the knobs are */
+        s->kv[i] = a->val[i];
     s->coef_age = 0;
     for (int i = 0; i < NNOTE; i++)
         s->note[i] = c->note[i];
@@ -1321,7 +1364,7 @@ static void follow(ak_t *a)
             float ratio = osc_ratio(pr, k) * s->drift[i];
             float to = clampf(mtof((float)c.note[i]) * ratio, 8.0f, 12000.0f) / SR;
             if (i >= s->count) {        /* a note the chord didn't have (a new chord type) */
-                s->osc[i][k].phase = 0.0f;
+                s->osc[i][k].phase = rnd_phase(a);
                 s->delay[i] = 0;
                 s->sgain[i] = 1.0f;
             }
@@ -1484,29 +1527,50 @@ static const float VOWELS[NVOWEL][3] = {
 };
 static const float BAND_LEVEL[3] = {1.0f, 0.63f, 0.35f};
 
+/* a Chamberlin SVF's coefficients at 48 kHz (f, q) to the same poles at 96 kHz (z2 = sqrt(z)),
+ * so it sounds the same below saturation. Written so float keeps it exact at low cutoffs */
+static void map96(float f, float q, float *f2, float *q2)
+{
+    float fa = f * q;                               /* 1 - r^2 (r: the poles' radius) */
+    float r = sqrtf_(1.0f - fa);
+    float omr = fa / (1.0f + r);                    /* 1 - r */
+    float sr = sqrtf_(r);
+    float omc = (f * f - omr * omr) / (2.0f * r);   /* 1 - cos(angle) */
+    float ch = sqrtf_(1.0f - 0.5f * omc);           /* cos(angle / 2) */
+    float omch = 0.5f * omc / (1.0f + ch);
+    float omsr = omr / (1.0f + sr);
+    *f2 = sqrtf_(omsr * omsr + 2.0f * sr * omch);
+    *q2 = *f2 > 1e-7f ? omr / *f2 : q;
+}
+
 /* the slot's filter coefficients and filter envelope, every COEF_EVERY samples */
 static void slot_coefs(const ak_t *a, slot_t *s)
 {
+    /* the knobs smoothed: a real knob's reading wobbles by a few counts, and unsmoothed each
+     * wobble stepped the cutoff (most through the env amount, x10): a crackle on held chords.
+     * The envelope isn't smoothed: a fast one (a pluck's) acts at once */
+    for (int i = 0; i < 3; i++)
+        s->kv[i] += (a->val[i] - s->kv[i]) * KNOB_SMOOTH;
     float fe = s->strumming && s->fenv.stage == DECAY ? s->fenv.lvl : adsr_step(&s->fenv);
-    float ep = fe * (2.0f * warp(a->val[V_ENV], s->u_env) - 1.0f);
+    float ep = fe * (2.0f * warp(s->kv[V_ENV], s->u_env) - 1.0f);
     float scale = ep >= 0.0f ? 1.0f + ep * 10.0f : (1.0f + ep > 0.05f ? 1.0f + ep : 0.05f);
-    float cut = CUT_MIN * exp2f_(warp(a->val[V_CUTOFF], s->u_cut) * CUT_OCT);
-    float fc = clampf(cut * s->key_track * scale, 20.0f, 0.45f * SR);
+    float cut = CUT_MIN * exp2f_(warp(s->kv[V_CUTOFF], s->u_cut) * CUT_OCT);
+    float fc = clampf(cut * s->key_track * s->vcut * scale, 20.0f, 0.45f * SR);
     /* the iOS synth's coefficient, 2 tan(pi fc / 2 SR) (it puts the filter at about fc / 2: the
      * presets are voiced with it), held below 0.95 to keep it stable */
     float tf = 2.0f * tanf_(0.5f * PI * fc / SR);
     if (tf > 0.95f)
         tf = 0.95f;
-    float tq = 1.0f - warp(a->val[V_RES], s->u_res) * 0.9f;
+    float tq = 1.0f - warp(s->kv[V_RES], s->u_res) * 0.9f;
     const float k = 0.0771f;            /* the iOS synth's 0.005 per sample, over COEF_EVERY samples */
-    s->f += (tf - s->f) * k;
+    s->f = tf;
     s->q += (tq - s->q) * k;
     if (s->fmode == F_FORMANT) {        /* the cutoff knob (and its envelope) picks the vowel */
-        float v = clampf(warp(a->val[V_CUTOFF], s->u_cut) + 0.5f * ep, 0.0f, 1.0f) * (NVOWEL - 1);
+        float v = clampf(warp(s->kv[V_CUTOFF], s->u_cut) + 0.5f * ep, 0.0f, 1.0f) * (NVOWEL - 1);
         /* in resonance's place (ALGO 1): the formant shift, an octave down to an octave up
          * (a bigger to a smaller voice); at 12 o'clock a formant preset's own, else none */
         float own = s->pr.fmode == F_FORMANT ? s->u_res : 0.5f;
-        float shift = exp2f_(2.0f * warp(a->val[V_RES], own) - 1.0f);
+        float shift = exp2f_(2.0f * warp(s->kv[V_RES], own) - 1.0f);
         int i = (int)v;
         if (i > NVOWEL - 2)
             i = NVOWEL - 2;
@@ -1522,22 +1586,14 @@ static void slot_coefs(const ak_t *a, slot_t *s)
         }
     }
     /* resonance compensation, relative to the preset's own resonance (unchanged at 12
-     * o'clock): the resonant peak grows about as 1 / q */
+     * o'clock): the resonant peak grows with it */
     float q0 = 1.0f - s->u_res * 0.9f;
-    float tg = s->fmode == F_FORMANT ? 1.0f : (0.4f + 0.6f * tq) / (0.4f + 0.6f * q0);
+    /* (the square root of the two-stage figure: LP24's peak is now one stage's) */
+    float tg = s->fmode == F_FORMANT ? 1.0f : sqrtf_((0.4f + 0.6f * tq) / (0.4f + 0.6f * q0));
     s->in_gain += (tg - s->in_gain) * k;
-    /* the SVF runs at 96 kHz: f2, q2 put its poles where f, q put them at 48 kHz (z2 = sqrt(z)),
-     * so it sounds the same below saturation. Written so float keeps it exact at low cutoffs */
-    float fa = s->f * s->q;                         /* 1 - r^2 (r: the poles' radius) */
-    float r = sqrtf_(1.0f - fa);
-    float omr = fa / (1.0f + r);                    /* 1 - r */
-    float sr = sqrtf_(r);
-    float omc = (s->f * s->f - omr * omr) / (2.0f * r);     /* 1 - cos(angle) */
-    float ch = sqrtf_(1.0f - 0.5f * omc);           /* cos(angle / 2) */
-    float omch = 0.5f * omc / (1.0f + ch);
-    float omsr = omr / (1.0f + sr);
-    s->f2 = sqrtf_(omsr * omsr + 2.0f * sr * omch);
-    s->q2 = s->f2 > 1e-7f ? omr / s->f2 : s->q;
+    /* the SVF runs at 96 kHz: f2, q2 put its poles where f, q put them at 48 kHz */
+    map96(s->f, s->q, &s->f2, &s->q2);
+    map96(s->f, LP2_Q, &s->f2b, &s->q2b);
 }
 
 /* one TPT (zero-delay-feedback) state-variable filter step (Zavalishin; Simper's form), for
@@ -1572,9 +1628,10 @@ INLINE float svf96(slot_t *s, float x)
     s->band = soft_knee(s->band + f * high, F_KNEE, F_CEIL);
     if (s->fmode == F_HP12)
         return high;
-    s->low2 = soft_knee(s->low2 + f * s->band2, F_KNEE, F_CEIL);  /* LP24: a second stage */
-    float high2 = s->low - s->low2 - q * s->band2;
-    s->band2 = soft_knee(s->band2 + f * high2, F_KNEE, F_CEIL);
+    float f2 = s->f2b, q2 = s->q2b;     /* LP24: a second stage, without resonance of its own */
+    s->low2 = soft_knee(s->low2 + f2 * s->band2, F_KNEE, F_CEIL);
+    float high2 = s->low - s->low2 - q2 * s->band2;
+    s->band2 = soft_knee(s->band2 + f2 * high2, F_KNEE, F_CEIL);
     return s->low2;
 }
 
@@ -1626,6 +1683,16 @@ INLINE float slot_render(const ak_t *a, slot_t *s)
     return slot_out(s, os_down(&s->os, y0, y1) * env * s->amp);
 }
 
+/* the chorus line `d` samples back (linear between two) */
+INLINE float ch_tap(const ak_t *a, float d)
+{
+    int n = (int)d;                     /* whole samples back, and the fraction (from d alone, */
+    float fr = d - (float)n;            /*   so the result doesn't depend on the write position) */
+    int i = a->ch_w - n + CH_LEN;
+    float x0 = a->ch_buf[i & (CH_LEN - 1)], x1 = a->ch_buf[(i - 1) & (CH_LEN - 1)];
+    return x0 + (x1 - x0) * fr;
+}
+
 static int16_t render(cVoice *v)
 {
     ak_t *a = (ak_t *)v;
@@ -1655,6 +1722,26 @@ static int16_t render(cVoice *v)
     a->ls_z1 = LS_B1 * y - LS_A1 * sh + a->ls_z2;
     a->ls_z2 = LS_B2 * y - LS_A2 * sh;
     y += a->ls_k * (sh - y);
+    float hp = BG_B0 * y + a->bg_z1;                    /* the bass guard */
+    a->bg_z1 = BG_B1 * y - BG_A1 * hp + a->bg_z2;
+    a->bg_z2 = BG_B0 * y - BG_A2 * hp;
+    y = hp;
+    /* the chorus: the sounding chord's amount (kept through a silence) */
+    if (a->slot[0].stage != IDLE)
+        a->ch_amt = a->slot[0].pr.chorus & 3;
+    a->ch_buf[a->ch_w] = y;
+    a->ch_k += (CH_WET[a->ch_amt] - a->ch_k) * LS_FADE;
+    if (a->ch_k > 0.0005f) {
+        float ph = a->ch_ph + CH_RATE[a->ch_amt] * (1.0f / SR);
+        if (ph >= 1.0f)
+            ph -= 1.0f;
+        a->ch_ph = ph;
+        float sway = (4.0f * absf(ph - 0.5f) - 1.0f) * (CH_DEPTH[a->ch_amt] * SR * 0.001f);
+        float t1 = ch_tap(a, CH_BASE + sway), t2 = ch_tap(a, CH_BASE - sway);
+        /* (1 + 0.4 k: the taps aren't in step with the dry sound, so they add as power) */
+        y = (y * (1.0f - 0.5f * a->ch_k) + (t1 + t2) * (0.5f * a->ch_k)) * (1.0f + 0.4f * a->ch_k);
+    }
+    a->ch_w = (a->ch_w + 1) & (CH_LEN - 1);
     /* DC blocker (the pulse oscillators' offset), then the limiter and the soft clip */
     y *= MIX;
     float d = y - a->dc_x + DC_R * a->dc_y;

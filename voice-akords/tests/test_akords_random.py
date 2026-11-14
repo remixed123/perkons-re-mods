@@ -340,10 +340,10 @@ class TestVoiceSound(AkordsCase):
         e = self.machine(preset=4)                              # Pluck: saws
         self.voice(e, S.PRESET_FIELDS[4], S.O_STRUM_UP)
         x = self.play(e, tune_for(7, MAJOR), n=4800)
-        steps = max(abs(x[i + 1] - x[i]) for i in range(len(x) - 1))
-        e = self.machine(preset=4)
-        y = self.play(e, tune_for(7, MAJOR), n=4800)
-        self.assertLess(steps, 1.5 * max(abs(y[i + 1] - y[i]) for i in range(len(y) - 1)))
+        d = [abs(x[i + 1] - x[i]) for i in range(len(x) - 1)]
+        for entry in (2160, 4320):                              # the 2nd and 3rd notes come in
+            with self.subTest(entry=entry):                     # no bigger step than the chord's own
+                self.assertLess(max(d[entry:entry + 100]), 1.5 * max(d[entry - 500:entry]))
 
     def slot_floats(self, e):
         b = e.slot(e.out) + 0xd0

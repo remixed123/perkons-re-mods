@@ -14,7 +14,7 @@ from perkons.fwimage import Image
 from perkons.rig import EVT, M4Rig
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'lib'))
-from ak_rig import AkordsCase, DRONE, HAVE_GCC, MSG_AKORDS_SOUND, MSG_VOICE_MAP, PLAY, POS1, POS2, POS3, goertzel, remap  # noqa: E402
+from ak_rig import AkordsCase, DRONE, HAVE_GCC, MSG_AKORDS_SOUND, MSG_VOICE_MAP, PLAY, POS1, POS2, POS3, remap  # noqa: E402
 
 KIT, MOD, SHIFT = 0x41, 0x43, 0x47
 KIT_MODE, AKORDS_PAGE, ENGINES_PAGE = 5, 17, 18
@@ -38,6 +38,20 @@ def image():
 
 
 @unittest.skipUnless(HAVE_GCC, 'arm-none-eabi-gcc not installed')
+
+def high(x, fc):
+    """x through two one-pole high-passes at fc"""
+    import math
+    k = math.exp(-2 * math.pi * fc / 48000)
+    for _ in range(2):
+        y, px, o = 0.0, 0.0, []
+        for v in x:
+            y = k * (y + v - px)
+            px = v
+            o.append(y)
+        x = o
+    return x
+
 class TestM4FollowsTheSound(unittest.TestCase):
     def rig(self, sd=None):
         img, cave = image()
@@ -315,7 +329,10 @@ class TestM7TakesTheSound(AkordsCase):
         a, b = self.play(e, 2048, n=4800), self.play(ref, 2048, n=4800)
         la, lb = (sum(v * v for v in x) for x in (a, b))
         self.assertAlmostEqual(la / lb, 1.0, delta=0.05, msg='level')
-        self.assertAlmostEqual(goertzel(a, 523.25) / goertzel(b, 523.25), 1.0, delta=0.1, msg='a partial')
+        # the tone: the level above 1 kHz (the filter's work), not one harmonic: each note's two
+        # oscillators beat, so a single harmonic swings with their start phases
+        ha, hb = (sum(v * v for v in high(x, 1000.0)) for x in (a, b))
+        self.assertAlmostEqual(ha / hb, 1.0, delta=0.1, msg='the tone')
 
     def test_a_kit_sound_plays_as_it_was_saved(self):
         ref = self.tweaked()

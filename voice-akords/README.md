@@ -16,8 +16,6 @@ chord in your scale. The name is Latvian for "chord".
   the formant becomes the formant shift, from a bigger voice to a smaller one. Pushed hard,
   cutoff and resonance up, the filter saturates like an analog one, warm up to a scream,
   instead of clipping.
-  Thick held chords are kept at a level the voice's analog stage handles cleanly, so
-  they don't crackle; lighter sounds are not touched.
 * **16 presets**, from bass and pads to stabs, Reese and formant choirs, and **Random** to
   make new sounds of the same kind. Every sound is saved with the kit.
 * **Strum, Spread and Bass drop** change how the chord is played: notes one after another,
@@ -223,3 +221,22 @@ until you save it again.
   whole chord, scale included, by a semitone.
 * Sequenced DECAY values give per-step gate lengths.
 * Parameter locks and MIDI CCs on PARAM2 change whatever ALGO gives it when they play.
+
+## Crackle on held chords
+
+A held chord can crackle when it is loud, most often on thick presets such as Hollow, Reese
+and Pad.
+
+**Why it happens.** A chord plays up to five notes at once, each with two oscillators, so a
+held chord is a dense sound that stays at full level for as long as it holds. A held chord
+keeps pushing the same level through the rest of the Pērkons: the voice's analog stage, the
+master compressor and the outputs. When that level is high, the compressor and the analog
+path run out of headroom and the sound starts to crackle. Raising MASTER makes it worse,
+and so do the low notes of a big chord, which carry most of the energy. AKORDS already keeps
+its own level in check, but it cannot see what happens after the voice's output.
+
+**The fix.**
+
+* Turn down the **Amount** and **Threshold** of the Pērkons compressor from 10 to 7. This
+is usually enough to remove the crackle completely.
+* If some is left, turn the voice's **LEVEL** or **MASTER** down a little.

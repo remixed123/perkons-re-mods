@@ -25,12 +25,12 @@ PACKED = 16
 (WAVE, OCT, DET, LEV, PW) = range(5)
 OSC_N = 5
 FMODE, CUT, RES, ENVAMT, KEYTRK = 10, 11, 12, 13, 14
-AENV, FENV, GLIDE, TRIM = 15, 19, 23, 24
+AENV, FENV, GLIDE, TRIM, CHORUS = 15, 19, 23, 24, 25
 E_ATT, E_DEC, E_SUS, E_REL = range(4)
 W_SINE, W_TRI, W_SAW, W_PULSE = range(4)
 F_LP24, F_HP12, F_FORMANT = range(3)
 O_STRUM_UP, O_STRUM_DOWN, O_SPREAD, O_DROP, O_MUTATE, O_OWN = 1, 2, 4, 8, 16, 0x80
-assert NFIELD == 25 and sum(BITS) <= 8 * PACKED and len(PRESET_FIELDS) == 16
+assert NFIELD == 26 and sum(BITS) <= 8 * PACKED and len(PRESET_FIELDS) == 16
 
 
 def ak_pack(f):
