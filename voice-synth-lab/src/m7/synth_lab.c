@@ -37,8 +37,13 @@
 #define FOLLOW_SAMPLES  1200        /* 25 ms: a new note follows TUNE at once (as Akords) */
 #define SETTLE_SAMPLES  960         /* later, a new TUNE step must hold 20 ms */
 #define LEVEL           8000.0f     /* peak scale, as the stock tonal voices */
-#define LIM_THR         9000.0f     /* the output limiter: peaks held at this */
-#define LIM_REL         0.999861f   /* instant attack, 150 ms release */
+#define LIM_THR         9000.0f     /* the output limiter: peaks held near this */
+#define LIM_ATT         0.067f      /* 0.3 ms attack (no instant grab: it would square the peaks) */
+#define LIM_REL         0.999861f   /* 150 ms release */
+#define CLIP_KNEE       8500.0f     /* after the limiter, a soft clip rounds what its attack lets */
+#define CLIP_CEIL       10000.0f    /*   through: untouched below the knee, never above the ceiling */
+#define F_KNEE          7.0f        /* the filter's states: untouched below this, then bent */
+#define F_CEIL          10.0f       /*   smoothly towards this (saturation, not a hard clip) */
 #define DC_R            0.9995f     /* DC blocker pole (~4 Hz) */
 #define DRONE_AT        0.95f
 #define DETENT          0.02f       /* +-2% around 12 o'clock is the sound's own value */
@@ -212,6 +217,17 @@ INLINE float clampf(float x, float lo, float hi)
 INLINE float absf(float x)
 {
     return x < 0.0f ? -x : x;
+}
+
+/* identity up to `knee`, then bends smoothly towards `ceil` (never reaches it) */
+INLINE float soft_knee(float x, float knee, float ceil)
+{
+    float m = x < 0.0f ? -x : x;
+    if (m <= knee)
+        return x;
+    float r = ceil - knee, u = (m - knee) / r;
+    float y = knee + r * u / (1.0f + u);
+    return x < 0.0f ? -y : y;
 }
 
 /* 2^x, |x| < 100 (as voice-zibens) */
@@ -902,7 +918,7 @@ static int16_t render(cVoice *v)
         k->prev = mix + k->fold_bias;
     }
 
-    /* filter (the iOS synth's state-variable filter, its states clipped at +-10) */
+    /* filter (the iOS synth's state-variable filter, its states saturating towards +-10) */
     if (k->filt_on) {
         k->f += k->f_step;
         k->q += k->q_step;
@@ -912,9 +928,9 @@ static int16_t render(cVoice *v)
             k->one += f * 0.5f * (x - k->one);
             mix = k->one;
         } else {
-            k->low = clampf(k->low + f * k->band, -10.0f, 10.0f);
+            k->low = soft_knee(k->low + f * k->band, F_KNEE, F_CEIL);
             float high = x - k->low - q * k->band;
-            k->band = clampf(k->band + f * high, -10.0f, 10.0f);
+            k->band = soft_knee(k->band + f * high, F_KNEE, F_CEIL);
             switch (k->ftype) {
             case SL_F_LP12: mix = k->low; break;
             case SL_F_BP:   mix = k->band; break;
@@ -925,9 +941,9 @@ static int16_t render(cVoice *v)
                 mix = k->one;
                 break;
             default: {                  /* LP24: a second stage */
-                k->low2 = clampf(k->low2 + f * k->band2, -10.0f, 10.0f);
+                k->low2 = soft_knee(k->low2 + f * k->band2, F_KNEE, F_CEIL);
                 float h2 = k->low - k->low2 - q * k->band2;
-                k->band2 = clampf(k->band2 + f * h2, -10.0f, 10.0f);
+                k->band2 = soft_knee(k->band2 + f * h2, F_KNEE, F_CEIL);
                 mix = k->low2;
                 break;
             }
@@ -941,14 +957,16 @@ static int16_t render(cVoice *v)
         return 0;
     }
     float y = mix * a * k->vel * k->trim;
-    /* DC blocker (the pulse's and the fold's offsets), the limiter, the level for DRIVE */
+    /* DC blocker (the pulse's and the fold's offsets), the limiter and the soft clip, the level
+     * for DRIVE */
     float d = y - k->dc_x + DC_R * k->dc_y;
     k->dc_x = y;
     k->dc_y = d;
     float m = absf(d);
-    k->lim = m > k->lim ? m : k->lim * LIM_REL;
+    k->lim = m > k->lim ? k->lim + (m - k->lim) * LIM_ATT : k->lim * LIM_REL;
     if (k->lim > LIM_THR)
         d *= LIM_THR / k->lim;
+    d = soft_knee(d, CLIP_KNEE, CLIP_CEIL);
     d = clampf(d * k->dgain, -32767.0f, 32767.0f);
     return (int16_t)(((int32_t)d * k->gain) >> 16);
 }

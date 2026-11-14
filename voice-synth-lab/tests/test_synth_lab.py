@@ -106,7 +106,7 @@ class TestSynthLab(unittest.TestCase):
                 self.assertEqual(self.sl.sound(e), v)
                 p = peak(x)
                 self.assertGreater(p, 1000, 'audible')
-                self.assertLessEqual(p, 9050, 'held by the limiter')
+                self.assertLessEqual(p, 10000, 'held by the limiter and the soft clip')
                 levels[name] = (p, rms(x))
         print('\npresets (peak, rms):', {k: (round(a), round(b)) for k, (a, b) in levels.items()})
         self.assertTrue(base)
