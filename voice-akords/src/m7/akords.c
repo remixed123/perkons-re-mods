@@ -5,8 +5,8 @@
  * mode, velocity, note, param pointers, mute, gain) sit at the stock offsets, and the
  * vtable has the four methods the firmware calls (trigger, init, update, render).
  *
- * Each trigger plays a chord of 3 to 5 notes; the chord before fades out in 2 ms first
- * (one chord slot). The slot is up to 5 notes x 2 oscillators into one filter (its own
+ * Each trigger plays a chord of 3 or 4 notes; the chord before fades out in 2 ms first
+ * (one chord slot). The slot is up to 4 notes x 2 oscillators into one filter (its own
  * filter envelope) and an amp envelope, then a DC blocker and a limiter.
  *
  *   TUNE (param 0)    chord root, stepped through the scale, 4 octaves from the root (C2)
@@ -110,7 +110,7 @@ static const float CH_WET[4] = {0.0f, 0.35f, 0.5f, 0.6f};
 #define SETTLE_SAMPLES  960         /* 20 ms: later, a new TUNE step must hold this long */
 #define STEAL_SAMPLES   96          /* 2 ms fade of a slot a new chord takes */
 #define NSLOT           1           /* one chord: a new one takes over after a short fade */
-#define NNOTE           5           /* notes in a chord, at most (unused: -1) */
+#define NNOTE           4           /* notes in a chord, at most (unused: -1) */
 #define DRIFT_CENTS     3.0f        /* each chord note's own detune: up to this either way */
 /* The level follows the voice's DRIVE (an analog stage after the voice): louder with little
  * or no DRIVE, to sit with the voices that use it, quieter at full DRIVE, so the drive
@@ -237,7 +237,7 @@ static const int8_t SHAPE_M7[] = {4, 0, 3, 7, 10};
 static const int8_t SHAPE_QUARTAL[] = {4, 0, 5, 10, 15};
 static const int8_t SHAPE_POWER[] = {3, 0, 7, 12};
 static const int8_t SHAPE_MAJOR[] = {3, 0, 4, 7};          /* Diatonic on Chromatic */
-static const int8_t SHAPE_M9[] = {5, 0, 3, 7, 10, 14};     /* Diatonic 9th on Chromatic */
+static const int8_t SHAPE_M9[] = {4, 0, 3, 10, 14};        /* Diatonic 9th on Chromatic (no 5th) */
 
 /* ---- the object ------------------------------------------------------------------------ */
 
@@ -263,8 +263,9 @@ typedef struct {
 typedef struct {
     int32_t stage;                      /* +0: the amp envelope's stage (IDLE: free) */
     int8_t note[NNOTE];                 /* +4: MIDI notes, low to high (unused: -1) */
-    uint8_t preset;                     /* +9 */
-    uint8_t count;                      /* +10: notes */
+    uint8_t preset;                     /* +8 */
+    uint8_t count;                      /* +9: notes */
+    uint8_t pad_s[2];
     float norm;                         /* level for the note count */
     int32_t gate;                       /* gate length in samples; -1: drone */
     int32_t elapsed;                    /* samples since the chord started */
@@ -283,7 +284,6 @@ typedef struct {
     float level[2], pw[2];
     float low, band, low2, band2;       /* SVF states (formant TPT: the integrators' ic2eq / ic1eq) */
     float f, q;                         /* smoothed SVF coefficients (Chamberlin f, damping) */
-    int32_t coef_age;
     float in_gain;                      /* the filter's input: less as the resonance rises */
     float low3, band3;                  /* formant: the third band's states */
     float ff[3];                        /* formant: the three bands' smoothed g */
@@ -325,8 +325,8 @@ typedef struct {
     /* ---- ours ---- */
     uint8_t set[4];                     /* +0xc0 preset, chord, scale, root (indices) */
     int8_t last[NNOTE];                 /* +0xc4 the last chord played, low to high, unused -1 */
-    uint8_t have_last;                  /* +0xc9 */
-    uint8_t pad2[2];
+    uint8_t have_last;                  /* +0xc8 */
+    uint8_t pad2[3];
     uint32_t slot_size;                 /* +0xcc sizeof(slot_t), for tools */
     slot_t slot[NSLOT];                 /* +0xd0 */
     float val[NVAL];                    /* the knob values (PLAY ones in their units) */
@@ -362,6 +362,10 @@ typedef struct {
     float ch_ph;
     int32_t ch_amt;
     float ch_k;
+    /* the block: COEF_EVERY samples worked out together, then played one by one */
+    int32_t bi;                         /* the next sample of buf to play; COEF_EVERY: a new block */
+    float buf[COEF_EVERY];              /* the output */
+    float sb[COEF_EVERY], eb[COEF_EVERY], nb[COEF_EVERY];  /* a slot's signal, amp envelope, a note fading in */
 } ak_t;
 
 _Static_assert(__builtin_offsetof(ak_t, algo) == OFF_cVoice_algo, "algo");
@@ -375,8 +379,8 @@ _Static_assert(__builtin_offsetof(ak_t, set) == 0xc0, "set");
 _Static_assert(__builtin_offsetof(ak_t, last) == 0xc4, "last");
 _Static_assert(__builtin_offsetof(ak_t, slot_size) == 0xcc, "slot_size");
 _Static_assert(__builtin_offsetof(ak_t, slot) == 0xd0, "slot");
-_Static_assert(__builtin_offsetof(slot_t, note) == 4 && __builtin_offsetof(slot_t, preset) == 9 &&
-               __builtin_offsetof(slot_t, count) == 10, "slot");
+_Static_assert(__builtin_offsetof(slot_t, note) == 4 && __builtin_offsetof(slot_t, preset) == 8 &&
+               __builtin_offsetof(slot_t, count) == 9, "slot");
 _Static_assert(sizeof(ak_t) <= 0x4000, "fits a voice-map arena");
 
 /* ---- small maths (no libm) --------------------------------------------------------- */
@@ -496,35 +500,6 @@ INLINE float fast_sin(float p)
     const float b = 4.0f / PI, c = -4.0f / (PI * PI);
     float y = b * x + c * x * absf(x);
     return 0.225f * (y * absf(y) - y) + y;
-}
-
-/* The band-limited step correction for a unit jump of -2 (a saw's wrap) at phase 0, a
- * phase step dt per sample: the cubic B-spline BLEP, spread over two samples each side of
- * the jump (the common PolyBLEP spreads it over one): aliases ~10 dB lower (15-20 below 5 kHz),
- * for a slightly softer top octave. Needs dt <= 0.25 (12 kHz). */
-INLINE float blep(float t, float dt)
-{
-    if (t < dt + dt) {                  /* just after the jump */
-        float u = t / dt;
-        if (u < 1.0f) {
-            float u2 = u * u;
-            return (4.0f * u - 2.0f * u2 * u + 0.75f * u2 * u2) * (1.0f / 3) - 1.0f;
-        }
-        float w = 2.0f - u;
-        w *= w;
-        return w * w * (-1.0f / 12);
-    }
-    if (t > 1.0f - dt - dt) {           /* just before it */
-        float u = (1.0f - t) / dt;
-        if (u < 1.0f) {
-            float u2 = u * u;
-            return 1.0f - (4.0f * u - 2.0f * u2 * u + 0.75f * u2 * u2) * (1.0f / 3);
-        }
-        float w = 2.0f - u;
-        w *= w;
-        return w * w * (1.0f / 12);
-    }
-    return 0.0f;
 }
 
 INLINE float blamp(float t, float dt)
@@ -801,7 +776,8 @@ static int pick(int scale, int r, const int8_t *cand, int n)
 /* intervals of the in-key chord on the scale's degree `deg` (r: its semitones from the
  * root). 7-note scales stack the scale's own thirds; the others take the nearest third
  * (a sus 4th / 2nd if the scale has none), fifth or seventh the scale has. */
-/* the chord the scale gives on degree `deg` (root r): 3 notes (triad), 4 (7th) or 5 (9th);
+/* the chord the scale gives on degree `deg` (root r): 3 notes (triad), 4 (7th) or 5 (9th: its
+ * 5th is then left out, make_chord);
  * the 7-note scales stack their own thirds, the others take the nearest the scale has */
 static void diatonic(int scale, int deg, int r, int cnt, int8_t *iv)
 {
@@ -929,12 +905,21 @@ static void make_chord(ak_t *a, chord_t *c, const int8_t *ref, int has_ref)
     switch (type) {
     case CH_DIA: case CH_DIA_S:
     case CH_DIA7: case CH_DIA7_S:
-    case CH_DIA9: case CH_DIA9_S:
-        cnt = type >= CH_DIA9 ? 5 : (type >= CH_DIA7 ? 4 : 3);
+        cnt = type >= CH_DIA7 ? 4 : 3;
         if (scale == SCALE_CHROMATIC)
-            shape = cnt == 5 ? SHAPE_M9 : (cnt == 4 ? SHAPE_M7 : SHAPE_MAJOR);
+            shape = cnt == 4 ? SHAPE_M7 : SHAPE_MAJOR;
         else
             diatonic(scale, step, r, cnt, iv);
+        break;
+    case CH_DIA9: case CH_DIA9_S:       /* 1 3 7 9: the 5th left out (four notes at most) */
+        if (scale == SCALE_CHROMATIC) {
+            shape = SHAPE_M9;
+        } else {
+            int8_t t[5];
+            diatonic(scale, step, r, 5, t);
+            iv[0] = t[0], iv[1] = t[1], iv[2] = t[3], iv[3] = t[4];
+            cnt = 4;
+        }
         break;
     case CH_QUARTAL: case CH_QUARTAL_S:
         shape = SHAPE_QUARTAL;
@@ -1088,7 +1073,7 @@ static float rnd_phase(ak_t *a)
 /* the level for a chord of cnt notes: about the same loudness as 3 */
 static float count_norm(int cnt)
 {
-    return cnt >= 5 ? 0.7746f : (cnt == 4 ? 0.8660f : 1.0f);    /* sqrt(3 / cnt) */
+    return cnt >= 4 ? 0.8660f : 1.0f;   /* sqrt(3 / cnt) */
 }
 
 /* a random number 0 .. n - 1 (the notes' detune generator) */
@@ -1183,6 +1168,8 @@ static void start_slot(ak_t *a, slot_t *s, const chord_t *c)
     int glide = pr->glide > 0.0f && c->has_from;
     for (int i = 0; i < NNOTE; i++)
         s->drift[i] = note_drift(a);
+    note_drift(a);                      /* a fifth draw, as when a chord had up to five notes: the
+                                           chords' detunes and start phases stay as they were */
     for (int i = 0; i < c->count; i++)
         for (int k = 0; k < 2; k++) {
             float ratio = osc_ratio(pr, k) * s->drift[i];
@@ -1221,7 +1208,6 @@ static void start_slot(ak_t *a, slot_t *s, const chord_t *c)
     s->vcut = exp2f_((c->amp - 1.0f) * VEL_CUT_OCT);
     for (int i = 0; i < 3; i++)         /* V_CUTOFF, V_RES, V_ENV: start where the knobs are */
         s->kv[i] = a->val[i];
-    s->coef_age = 0;
     for (int i = 0; i < NNOTE; i++)
         s->note[i] = c->note[i];
     s->count = c->count;
@@ -1404,119 +1390,170 @@ static void init(cVoice *v)
     read_knobs(a);
     waiting[a->out & 3] = w;
     a->dgain = a->dgain_t;
+    a->bi = COEF_EVERY;                 /* a new block with the next sample */
 }
 
-/* ---- audio (per sample) ------------------------------------------------------------------ */
+/* ---- audio: a block of BLK samples at a time ---------------------------------------------- */
 
-/* the slot's oscillators, summed: each oscillator's waveform chosen once for its 3 notes */
-#define NEXT(o, n, dt) do { n += dt; (o)->phase = n >= 1.0f ? n - 1.0f : n; } while (0)
+/* The firmware asks for one sample at a time; the engine works out BLK of them together, stage
+ * by stage (oscillators, filter, envelope, then the output's chain), each stage one tight loop
+ * over the block with its choices (a wave, the filter) made once. BLK is the filter's control
+ * step and divides the firmware's 32-sample half; the steal fade and Strum's gaps are whole
+ * blocks, so they start and end on block edges as they did on samples. */
+#define BLK COEF_EVERY
 
-INLINE float oscillators(slot_t *s)
+/* The band-limited step correction for a unit jump of -2 (a saw's wrap) at phase 0, a
+ * phase step dt per sample: the cubic B-spline BLEP, spread over two samples each side of
+ * the jump (the common PolyBLEP spreads it over one): aliases ~10 dB lower (15-20 below 5 kHz),
+ * for a slightly softer top octave. Needs dt <= 0.25 (12 kHz).
+ * Called only for a phase within 2 dt of the jump; idt = 1 / dt. */
+INLINE float blep_near(float t, float idt)
 {
-    float x = 0.0f;
-    const int cnt = s->count;
-    for (int k = 0; k < 2; k++) {
-        float lv = s->level[k], pw = s->pw[k], y = 0.0f;
-        switch (s->wave[k]) {
+    if (t < 0.5f) {                     /* just after the jump */
+        float u = t * idt;
+        if (u < 1.0f) {
+            float u2 = u * u;
+            return (4.0f * u - 2.0f * u2 * u + 0.75f * u2 * u2) * (1.0f / 3) - 1.0f;
+        }
+        float w = 2.0f - u;
+        w *= w;
+        return w * w * (-1.0f / 12);
+    }
+    float u = (1.0f - t) * idt;         /* just before it */
+    if (u < 1.0f) {
+        float u2 = u * u;
+        return 1.0f - (4.0f * u - 2.0f * u2 * u + 0.75f * u2 * u2) * (1.0f / 3);
+    }
+    float w = 2.0f - u;
+    w *= w;
+    return w * w * (1.0f / 12);
+}
+
+/* one oscillator over the block, wave w and glide (constants: each its own loop), x gain,
+ * added to x. Its corrections are worked out only within 2 dt of a jump */
+INLINE void osc_block(osc_t *o, float *x, float gain, int w, float pw, int glide, float ga)
+{
+    float n = o->phase, dt = o->inc, tg = o->target;
+    float idt = 1.0f / dt, lo = dt + dt, hi = 1.0f - lo, top = 1.0f - dt;
+    for (int j = 0; j < BLK; j++) {
+        if (glide) {
+            dt += (tg - dt) * ga;
+            idt = 1.0f / dt;
+            lo = dt + dt;
+            hi = 1.0f - lo;
+            top = 1.0f - dt;
+        }
+        float y;
+        switch (w) {
         case W_SAW:
-            for (int i = 0; i < cnt; i++) {
-                osc_t *o = &s->osc[i][k];
-                float n = o->phase, dt = o->inc;
-                y += 2.0f * n - 1.0f - blep(n, dt);
-                NEXT(o, n, dt);
-            }
+            y = 2.0f * n - 1.0f;
+            if (n < lo || n > hi)
+                y -= blep_near(n, idt);
             break;
-        case W_PULSE:
-            for (int i = 0; i < cnt; i++) {
-                osc_t *o = &s->osc[i][k];
-                float n = o->phase, dt = o->inc, q = n - pw;
-                if (q < 0.0f)
-                    q += 1.0f;
-                y += (n < pw ? 1.0f : -1.0f) + blep(n, dt) - blep(q, dt);
-                NEXT(o, n, dt);
-            }
-            break;
-        case W_TRI:
-            for (int i = 0; i < cnt; i++) {
-                osc_t *o = &s->osc[i][k];
-                float n = o->phase, dt = o->inc, q = n - 0.5f;
-                if (q < 0.0f)
-                    q += 1.0f;
-                y += (n < 0.5f ? 4.0f * n - 1.0f : 3.0f - 4.0f * n) - 8.0f * blamp(n, dt) + 8.0f * blamp(q, dt);
-                NEXT(o, n, dt);
-            }
-            break;
-        default:
-            for (int i = 0; i < cnt; i++) {
-                osc_t *o = &s->osc[i][k];
-                float n = o->phase, dt = o->inc;
-                y += fast_sin(n);
-                NEXT(o, n, dt);
-            }
+        case W_PULSE: {
+            float q = n - pw;
+            if (q < 0.0f)
+                q += 1.0f;
+            y = n < pw ? 1.0f : -1.0f;
+            if (n < lo || n > hi)
+                y += blep_near(n, idt);
+            if (q < lo || q > hi)
+                y -= blep_near(q, idt);
             break;
         }
-        x += y * lv;
+        case W_TRI: {
+            float q = n - 0.5f;
+            if (q < 0.0f)
+                q += 1.0f;
+            y = n < 0.5f ? 4.0f * n - 1.0f : 3.0f - 4.0f * n;
+            if (n < dt || n > top)      /* the corners: within dt of each */
+                y -= 8.0f * blamp(n, dt);
+            if (q < dt || q > top)
+                y += 8.0f * blamp(q, dt);
+            break;
+        }
+        default:
+            y = fast_sin(n);
+            break;
+        }
+        x[j] += y * gain;
+        n += dt;
+        if (n >= 1.0f)
+            n -= 1.0f;
     }
-    return x * s->norm;
+    o->phase = n;
+    o->inc = dt;
 }
 
-/* one oscillator's sample, and its phase on (Strum's path: a note at a time) */
-INLINE float osc_one(osc_t *o, int wave, float pw)
+static __attribute__((noinline)) void osc_wave(osc_t *o, float *x, float gain, int w, float pw, float ga)
 {
-    float n = o->phase, dt = o->inc, y;
-    switch (wave) {
-    case W_SAW:
-        y = 2.0f * n - 1.0f - blep(n, dt);
-        break;
-    case W_PULSE: {
-        float q = n - pw;
-        if (q < 0.0f)
-            q += 1.0f;
-        y = (n < pw ? 1.0f : -1.0f) + blep(n, dt) - blep(q, dt);
-        break;
+    if (ga > 0.0f) {
+        switch (w) {
+        case W_SAW:   osc_block(o, x, gain, W_SAW, pw, 1, ga); break;
+        case W_PULSE: osc_block(o, x, gain, W_PULSE, pw, 1, ga); break;
+        case W_TRI:   osc_block(o, x, gain, W_TRI, pw, 1, ga); break;
+        default:      osc_block(o, x, gain, W_SINE, pw, 1, ga); break;
+        }
+    } else {
+        switch (w) {
+        case W_SAW:   osc_block(o, x, gain, W_SAW, pw, 0, 0.0f); break;
+        case W_PULSE: osc_block(o, x, gain, W_PULSE, pw, 0, 0.0f); break;
+        case W_TRI:   osc_block(o, x, gain, W_TRI, pw, 0, 0.0f); break;
+        default:      osc_block(o, x, gain, W_SINE, pw, 0, 0.0f); break;
+        }
     }
-    case W_TRI: {
-        float q = n - 0.5f;
-        if (q < 0.0f)
-            q += 1.0f;
-        y = (n < 0.5f ? 4.0f * n - 1.0f : 3.0f - 4.0f * n) - 8.0f * blamp(n, dt) + 8.0f * blamp(q, dt);
-        break;
-    }
-    default:
-        y = fast_sin(n);
-        break;
-    }
-    NEXT(o, n, dt);
-    return y;
 }
 
-/* Strum: the notes start one by one (each still waiting holds its phase at 0), each fading in
- * over STRUM_RAMP; once all have, the slot goes back to oscillators() */
-static float oscillators_strum(slot_t *s)
+#define STRUM_BLOCKS    (STRUM_SAMPLES / BLK)
+_Static_assert(STRUM_SAMPLES % BLK == 0 && STEAL_SAMPLES % BLK == 0, "Strum's gaps and the steal fade in whole blocks");
+
+/* the slot's oscillators over the block into x: every note's two; with Strum, the notes
+ * still waiting hold their phase, and each fades in over STRUM_RAMP once it starts */
+static void oscillators(ak_t *a, slot_t *s, float *x)
 {
-    float x = 0.0f;
+    for (int j = 0; j < BLK; j++)
+        x[j] = 0.0f;
+    float ga = s->gliding ? s->glide_a : 0.0f;
     int busy = 0;
     for (int i = 0; i < s->count; i++) {
-        if (s->delay[i] > 0) {
-            s->delay[i]--;
-            busy = 1;
-            continue;
+        float *dst = x;
+        if (s->strumming) {
+            if (s->delay[i] > 0) {
+                s->delay[i] -= BLK;
+                busy = 1;
+                for (int k = 0; ga > 0.0f && k < 2; k++)    /* it glides meanwhile, as the others */
+                    for (int j = 0; j < BLK; j++)
+                        s->osc[i][k].inc += (s->osc[i][k].target - s->osc[i][k].inc) * ga;
+                continue;
+            }
+            if (s->sgain[i] < 1.0f) {   /* fading in: its own buffer first */
+                dst = a->nb;
+                for (int j = 0; j < BLK; j++)
+                    dst[j] = 0.0f;
+                busy = 1;
+            }
         }
-        float g = s->sgain[i];
-        if (g < 1.0f) {
-            g += STRUM_RAMP;
-            if (g > 1.0f)
-                g = 1.0f;
-            s->sgain[i] = g;
-            busy = 1;
-        }
-        float y = 0.0f;
         for (int k = 0; k < 2; k++)
-            y += osc_one(&s->osc[i][k], s->wave[k], s->pw[k]) * s->level[k];
-        x += y * g;
+            osc_wave(&s->osc[i][k], dst, s->level[k] * s->norm, s->wave[k], s->pw[k], ga);
+        if (dst != x) {
+            float g = s->sgain[i];
+            for (int j = 0; j < BLK; j++) {
+                g += STRUM_RAMP;
+                if (g > 1.0f)
+                    g = 1.0f;
+                x[j] += dst[j] * g;
+            }
+            s->sgain[i] = g;
+        }
     }
-    s->strumming = busy;
-    return x * s->norm;
+    if (s->strumming)
+        s->strumming = busy;
+    if (s->gliding && absf(s->osc[0][0].target - s->osc[0][0].inc) < 1e-7f) {
+        for (int i = 0; i < s->count; i++)
+            for (int k = 0; k < 2; k++)
+                s->osc[i][k].inc = s->osc[i][k].target;
+        s->gliding = 0;
+    }
 }
 
 /* formant: the vowels PARAM1 sweeps, dark to bright (U O A E I; Peterson & Barney's
@@ -1608,98 +1645,167 @@ INLINE float tpt(float x, float *ic1, float *ic2, float a1, float a2, float a3)
     return v1;
 }
 
-/* the steal fade, after the filter */
-INLINE float slot_out(slot_t *s, float y)
+
+/* the amp envelope over the block into e (as adsr_step, each stage one loop); `hold`: Strum's,
+ * the decay waits at its peak */
+static void env_block(adsr_t *v, float *e, int hold)
 {
-    if (s->steal > 0) {                 /* fading out for the chord that takes the slot */
-        y *= (float)s->steal * (1.0f / STEAL_SAMPLES);
-        if (--s->steal == 0)
-            s->stage = IDLE;
+    float l = v->lvl;
+    int j = 0;
+    while (j < BLK) {
+        float c, b;
+        switch (v->stage) {
+        case ATTACK:
+            for (c = v->a_c, b = v->a_b; j < BLK; j++) {
+                l = b + l * c;
+                if (l >= 1.0f) {
+                    e[j++] = l = 1.0f;
+                    v->stage = DECAY;
+                    break;
+                }
+                e[j] = l;
+            }
+            continue;
+        case DECAY:
+            if (hold)
+                break;
+            for (c = v->d_c, b = v->d_b; j < BLK; j++) {
+                l = b + l * c;
+                if (l <= v->sus) {
+                    e[j++] = l = v->sus;
+                    v->stage = v->sus > 0.0f ? SUSTAIN : IDLE;
+                    break;
+                }
+                e[j] = l;
+            }
+            continue;
+        case RELEASE:
+            for (c = v->r_c, b = v->r_b; j < BLK; j++) {
+                l = b + l * c;
+                if (l <= 0.0f) {
+                    e[j++] = l = 0.0f;
+                    v->stage = IDLE;
+                    break;
+                }
+                e[j] = l;
+            }
+            continue;
+        default:
+            break;
+        }
+        for (; j < BLK; j++)            /* sustain, idle, or held */
+            e[j] = l;
     }
-    return y;
+    v->lvl = l;
 }
 
-/* one 96 kHz step of the SVF: the high-pass, or the 24 dB low-pass */
-INLINE float svf96(slot_t *s, float x)
+/* the iOS synth's state-variable filter (Chamberlin), its states held below +-10 (the edge
+ * high resonance pushes it to) by a soft knee: it saturates there instead of clipping
+ * inside its loop (a crackle): 12 dB high-pass, or two stages for 24 dB low-pass. At 96 kHz
+ * (2x oversampled), so the saturation's harmonics don't alias. Over the block, in place;
+ * hp a constant (each its own loop) */
+INLINE void svf_block(slot_t *s, float *x, int hp)
 {
-    float f = s->f2, q = s->q2;
-    s->low = soft_knee(s->low + f * s->band, F_KNEE, F_CEIL);
-    float high = x - s->low - q * s->band;
-    s->band = soft_knee(s->band + f * high, F_KNEE, F_CEIL);
-    if (s->fmode == F_HP12)
-        return high;
-    float f2 = s->f2b, q2 = s->q2b;     /* LP24: a second stage, without resonance of its own */
-    s->low2 = soft_knee(s->low2 + f2 * s->band2, F_KNEE, F_CEIL);
-    float high2 = s->low - s->low2 - q2 * s->band2;
-    s->band2 = soft_knee(s->band2 + f2 * high2, F_KNEE, F_CEIL);
-    return s->low2;
+    float f = s->f2, q = s->q2, f2 = s->f2b, q2 = s->q2b, ig = s->in_gain;
+    float low = s->low, band = s->band, low2 = s->low2, band2 = s->band2;
+    for (int j = 0; j < BLK; j++) {
+        float u[2], y[2];
+        os_up(&s->os, x[j] * ig, &u[0], &u[1]);
+        for (int h = 0; h < 2; h++) {
+            low = soft_knee(low + f * band, F_KNEE, F_CEIL);
+            float high = u[h] - low - q * band;
+            band = soft_knee(band + f * high, F_KNEE, F_CEIL);
+            if (hp) {
+                y[h] = high;
+                continue;
+            }
+            low2 = soft_knee(low2 + f2 * band2, F_KNEE, F_CEIL);
+            float high2 = low - low2 - q2 * band2;
+            band2 = soft_knee(band2 + f2 * high2, F_KNEE, F_CEIL);
+            y[h] = low2;
+        }
+        x[j] = os_down(&s->os, y[0], y[1]);
+    }
+    s->low = low;
+    s->band = band;
+    s->low2 = low2;
+    s->band2 = band2;
 }
 
-INLINE float slot_render(const ak_t *a, slot_t *s)
+static __attribute__((noinline)) void svf_lp(slot_t *s, float *x) { svf_block(s, x, 0); }
+static __attribute__((noinline)) void svf_hp(slot_t *s, float *x) { svf_block(s, x, 1); }
+
+/* formant: three band-passes in parallel, at the vowel's formants (TPT), over the block */
+static __attribute__((noinline)) void formant_block(slot_t *s, float *x)
+{
+    float ig = s->in_gain;
+    float i1 = s->band, i2 = s->low, j1 = s->band2, j2 = s->low2, k1 = s->band3, k2 = s->low3;
+    float a0 = s->fa[0][0], a1 = s->fa[0][1], a2 = s->fa[0][2];
+    float b0 = s->fa[1][0], b1 = s->fa[1][1], b2 = s->fa[1][2];
+    float c0 = s->fa[2][0], c1 = s->fa[2][1], c2 = s->fa[2][2];
+    for (int j = 0; j < BLK; j++) {
+        float v = x[j] * ig;
+        float y = BAND_LEVEL[0] * tpt(v, &i1, &i2, a0, a1, a2);
+        y += BAND_LEVEL[1] * tpt(v, &j1, &j2, b0, b1, b2);
+        y += BAND_LEVEL[2] * tpt(v, &k1, &k2, c0, c1, c2);
+        x[j] = y * (FORMANT_Q * FORMANT_GAIN);
+    }
+    s->band = i1, s->low = i2, s->band2 = j1, s->low2 = j2, s->band3 = k1, s->low3 = k2;
+}
+
+/* one slot over the block, added to y */
+static void slot_block(ak_t *a, slot_t *s, float *y)
 {
     if (!s->released && s->gate >= 0 && s->elapsed >= s->gate + s->strum_len) {
         s->released = 1;
         adsr_release(&s->aenv);
         adsr_release(&s->fenv);
     }
-    s->elapsed++;
-    if (s->coef_age-- <= 0) {
-        s->coef_age = COEF_EVERY - 1;
-        slot_coefs(a, s);
-    }
+    s->elapsed += BLK;
+    slot_coefs(a, s);
     /* strumming: the envelope holds at its peak until the last note is in, so it isn't
      * already falling when the later notes start */
-    float env = s->strumming && s->aenv.stage == DECAY ? s->aenv.lvl : adsr_step(&s->aenv);
-    s->stage = s->aenv.stage;
-
-    if (s->gliding) {
-        for (int i = 0; i < s->count; i++)
-            for (int k = 0; k < 2; k++)
-                s->osc[i][k].inc += (s->osc[i][k].target - s->osc[i][k].inc) * s->glide_a;
-        if (absf(s->osc[0][0].target - s->osc[0][0].inc) < 1e-7f) {
-            for (int i = 0; i < s->count; i++)
-                for (int k = 0; k < 2; k++)
-                    s->osc[i][k].inc = s->osc[i][k].target;
-            s->gliding = 0;
+    float *e = a->eb, *x = a->sb;
+    env_block(&s->aenv, e, s->strumming);
+    oscillators(a, s, x);
+    if (s->fmode == F_FORMANT)
+        formant_block(s, x);
+    else if (s->fmode == F_HP12)
+        svf_hp(s, x);
+    else
+        svf_lp(s, x);
+    float amp = s->amp;
+    if (s->steal > 0) {                 /* fading out for the chord that takes the slot */
+        for (int j = 0; j < BLK; j++) {
+            y[j] += x[j] * e[j] * amp * ((float)s->steal * (1.0f / STEAL_SAMPLES));
+            if (--s->steal == 0) {
+                s->stage = IDLE;
+                return;
+            }
         }
+    } else {
+        for (int j = 0; j < BLK; j++)
+            y[j] += x[j] * e[j] * amp;
     }
-    float x = (s->strumming ? oscillators_strum(s) : oscillators(s)) * s->in_gain;
-
-    if (s->fmode == F_FORMANT) {        /* three band-passes in parallel, at the vowel's formants */
-        float y = 0.0f;
-        y += BAND_LEVEL[0] * tpt(x, &s->band, &s->low, s->fa[0][0], s->fa[0][1], s->fa[0][2]);
-        y += BAND_LEVEL[1] * tpt(x, &s->band2, &s->low2, s->fa[1][0], s->fa[1][1], s->fa[1][2]);
-        y += BAND_LEVEL[2] * tpt(x, &s->band3, &s->low3, s->fa[2][0], s->fa[2][1], s->fa[2][2]);
-        return slot_out(s, y * FORMANT_Q * FORMANT_GAIN * env * s->amp);
-    }
-
-    /* the iOS synth's state-variable filter (Chamberlin), its states held below +-10 (the edge
-     * high resonance pushes it to) by a soft knee: it saturates there instead of clipping
-     * inside its loop (a crackle): 12 dB high-pass, or two stages for 24 dB low-pass. At 96 kHz
-     * (2x oversampled), so the saturation's harmonics don't alias */
-    float u0, u1;
-    os_up(&s->os, x, &u0, &u1);
-    float y0 = svf96(s, u0), y1 = svf96(s, u1);
-    return slot_out(s, os_down(&s->os, y0, y1) * env * s->amp);
+    s->stage = s->aenv.stage;
 }
 
 /* the chorus line `d` samples back (linear between two) */
-INLINE float ch_tap(const ak_t *a, float d)
+INLINE float ch_tap(const ak_t *a, int w, float d)
 {
     int n = (int)d;                     /* whole samples back, and the fraction (from d alone, */
     float fr = d - (float)n;            /*   so the result doesn't depend on the write position) */
-    int i = a->ch_w - n + CH_LEN;
+    int i = w - n + CH_LEN;
     float x0 = a->ch_buf[i & (CH_LEN - 1)], x1 = a->ch_buf[(i - 1) & (CH_LEN - 1)];
     return x0 + (x1 - x0) * fr;
 }
 
-static int16_t render(cVoice *v)
+/* the block: the chord's slots, then the output's chain into buf */
+static __attribute__((noinline)) void block(ak_t *a)
 {
-    ak_t *a = (ak_t *)v;
-    fw_tick_mute_fade(v);
-    if (a->magic != MAGIC)
-        return 0;
-    float y = 0.0f;
+    float *y = a->buf;
+    for (int j = 0; j < BLK; j++)
+        y[j] = 0.0f;
     for (int i = 0; i < NSLOT; i++) {
         slot_t *s = &a->slot[i];
         if (s->stage == IDLE) {
@@ -1712,57 +1818,81 @@ static int16_t render(cVoice *v)
                 continue;
             }
         }
-        y += slot_render(a, s);
+        slot_block(a, s, y);
     }
     /* LP24 keeps all the chord's bass, which overloads the Perkons's analog stage after the
      * voice (a crackle): its low end is turned down, as loud by ear as the other filters */
     float lk = a->slot[0].stage != IDLE && a->slot[0].fmode == F_LP24 ? 1.0f : 0.0f;
-    a->ls_k += (lk - a->ls_k) * LS_FADE;
-    float sh = LS_B0 * y + a->ls_z1;                    /* transposed direct form II */
-    a->ls_z1 = LS_B1 * y - LS_A1 * sh + a->ls_z2;
-    a->ls_z2 = LS_B2 * y - LS_A2 * sh;
-    y += a->ls_k * (sh - y);
-    float hp = BG_B0 * y + a->bg_z1;                    /* the bass guard */
-    a->bg_z1 = BG_B1 * y - BG_A1 * hp + a->bg_z2;
-    a->bg_z2 = BG_B0 * y - BG_A2 * hp;
-    y = hp;
     /* the chorus: the sounding chord's amount (kept through a silence) */
     if (a->slot[0].stage != IDLE)
         a->ch_amt = a->slot[0].pr.chorus & 3;
-    a->ch_buf[a->ch_w] = y;
-    a->ch_k += (CH_WET[a->ch_amt] - a->ch_k) * LS_FADE;
-    if (a->ch_k > 0.0005f) {
-        float ph = a->ch_ph + CH_RATE[a->ch_amt] * (1.0f / SR);
-        if (ph >= 1.0f)
-            ph -= 1.0f;
-        a->ch_ph = ph;
-        float sway = (4.0f * absf(ph - 0.5f) - 1.0f) * (CH_DEPTH[a->ch_amt] * SR * 0.001f);
-        float t1 = ch_tap(a, CH_BASE + sway), t2 = ch_tap(a, CH_BASE - sway);
-        /* (1 + 0.4 k: the taps aren't in step with the dry sound, so they add as power) */
-        y = (y * (1.0f - 0.5f * a->ch_k) + (t1 + t2) * (0.5f * a->ch_k)) * (1.0f + 0.4f * a->ch_k);
+    float ls_k = a->ls_k, lz1 = a->ls_z1, lz2 = a->ls_z2, bz1 = a->bg_z1, bz2 = a->bg_z2;
+    float ch_k = a->ch_k, ch_ph = a->ch_ph, wet = CH_WET[a->ch_amt];
+    float rate = CH_RATE[a->ch_amt] * (1.0f / SR), depth = CH_DEPTH[a->ch_amt] * SR * 0.001f;
+    int w = a->ch_w;
+    float dx = a->dc_x, dy = a->dc_y, lim = a->lim, sus_ms = a->sus_ms, sus_cut = a->sus_cut;
+    float dgain = a->dgain, dgain_t = a->dgain_t;
+    for (int j = 0; j < BLK; j++) {
+        float v = y[j];
+        ls_k += (lk - ls_k) * LS_FADE;
+        float sh = LS_B0 * v + lz1;                     /* transposed direct form II */
+        lz1 = LS_B1 * v - LS_A1 * sh + lz2;
+        lz2 = LS_B2 * v - LS_A2 * sh;
+        v += ls_k * (sh - v);
+        float hp = BG_B0 * v + bz1;                     /* the bass guard */
+        bz1 = BG_B1 * v - BG_A1 * hp + bz2;
+        bz2 = BG_B0 * v - BG_A2 * hp;
+        v = hp;
+        a->ch_buf[w] = v;
+        ch_k += (wet - ch_k) * LS_FADE;
+        if (ch_k > 0.0005f) {
+            float ph = ch_ph + rate;
+            if (ph >= 1.0f)
+                ph -= 1.0f;
+            ch_ph = ph;
+            float sway = (4.0f * absf(ph - 0.5f) - 1.0f) * depth;
+            float t1 = ch_tap(a, w, CH_BASE + sway), t2 = ch_tap(a, w, CH_BASE - sway);
+            /* (1 + 0.4 k: the taps aren't in step with the dry sound, so they add as power) */
+            v = (v * (1.0f - 0.5f * ch_k) + (t1 + t2) * (0.5f * ch_k)) * (1.0f + 0.4f * ch_k);
+        }
+        w = (w + 1) & (CH_LEN - 1);
+        /* DC blocker (the pulse oscillators' offset), then the limiter and the soft clip */
+        v *= MIX;
+        float d = v - dx + DC_R * dy;
+        dx = v;
+        dy = d;
+        float m = absf(d);
+        lim = m > lim ? lim + (m - lim) * LIM_ATT : lim * LIM_REL;
+        if (lim > LIM_THR)
+            d *= LIM_THR / lim;
+        d = soft_knee(d, CLIP_KNEE, CLIP_CEIL);
+        /* the sustained-level limiter: a thick held chord sits near its peak all the time, which
+         * the voice's analog stage can't take (a crackle); held at SUS_THR, sparser sounds
+         * untouched. Before the level for DRIVE, so DRIVE keeps its +-3 dB */
+        sus_ms += (d * d - sus_ms) * SUS_AVG;
+        float cut = sus_ms > SUS_THR * SUS_THR ? 1.0f - SUS_THR * rsqrtf_(sus_ms) : 0.0f;
+        sus_cut += (cut - sus_cut) * (cut > sus_cut ? SUS_ATT : SUS_REL);
+        d *= 1.0f - sus_cut;
+        dgain += (dgain_t - dgain) * DRIVE_SMOOTH;      /* the level for DRIVE */
+        y[j] = d * dgain;               /* within +-14,200: the clip's ceiling, DRIVE's +3 dB */
     }
-    a->ch_w = (a->ch_w + 1) & (CH_LEN - 1);
-    /* DC blocker (the pulse oscillators' offset), then the limiter and the soft clip */
-    y *= MIX;
-    float d = y - a->dc_x + DC_R * a->dc_y;
-    a->dc_x = y;
-    a->dc_y = d;
-    float m = absf(d);
-    a->lim = m > a->lim ? a->lim + (m - a->lim) * LIM_ATT : a->lim * LIM_REL;
-    if (a->lim > LIM_THR)
-        d *= LIM_THR / a->lim;
-    d = soft_knee(d, CLIP_KNEE, CLIP_CEIL);
-    /* the sustained-level limiter: a thick held chord sits near its peak all the time, which the
-     * voice's analog stage can't take (a crackle); held at SUS_THR, sparser sounds untouched.
-     * Before the level for DRIVE, so DRIVE keeps its +-3 dB */
-    a->sus_ms += (d * d - a->sus_ms) * SUS_AVG;
-    float cut = a->sus_ms > SUS_THR * SUS_THR ? 1.0f - SUS_THR * rsqrtf_(a->sus_ms) : 0.0f;
-    a->sus_cut += (cut - a->sus_cut) * (cut > a->sus_cut ? SUS_ATT : SUS_REL);
-    d *= 1.0f - a->sus_cut;
-    a->dgain += (a->dgain_t - a->dgain) * DRIVE_SMOOTH;     /* the level for DRIVE */
-    d *= a->dgain;
-    float out = clampf(d, -32767.0f, 32767.0f);
-    return (int16_t)(((int32_t)out * a->gain) >> 16);
+    a->ls_k = ls_k, a->ls_z1 = lz1, a->ls_z2 = lz2, a->bg_z1 = bz1, a->bg_z2 = bz2;
+    a->ch_k = ch_k, a->ch_ph = ch_ph, a->ch_w = w;
+    a->dc_x = dx, a->dc_y = dy, a->lim = lim, a->sus_ms = sus_ms, a->sus_cut = sus_cut;
+    a->dgain = dgain;
+}
+
+static int16_t render(cVoice *v)
+{
+    ak_t *a = (ak_t *)v;
+    fw_tick_mute_fade(v);
+    if (a->magic != MAGIC)
+        return 0;
+    if (a->bi >= BLK) {
+        block(a);
+        a->bi = 0;
+    }
+    return (int16_t)(((int32_t)a->buf[a->bi++] * a->gain) >> 16);
 }
 
 /* ---- vtable and construction --------------------------------------------------------- */

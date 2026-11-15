@@ -87,7 +87,7 @@ class TestAkordsLevel(AkordsCase):
     def test_cpu(self):
         worst = 0
         for p, mode in ((1, PLAY), (6, PLAY), (7, PLAY), (10, PLAY), (7, FORMANT)):   # cut: two chords
-            e = self.machine(preset=p, chord='dia9')                                    # 5 notes
+            e = self.machine(preset=p, chord='dia9')                                    # 4 notes (the most)
             if mode != PLAY:
                 self.state(e, e.knobs, POS2, HP)
                 self.state(e, e.knobs, POS2, mode)

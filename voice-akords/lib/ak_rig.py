@@ -58,6 +58,8 @@ def model_chord(step, scale=MAJOR, root=0, chord='dia', note=36):
                 return next((c for c in cands if (r + c) % 12 in sc), cands[0])
             cands = [[4, 3, 5, 2], [7, 6, 8, 12], [10, 11, 9, 12], [14, 13, 15, 12]]
             iv = [0] + [pick(cands[i - 1]) for i in range(1, cnt)]
+        if cnt == 5:
+            iv = iv[:2] + iv[3:]        # the 9th: four notes at most, its 5th left out
     return sorted(36 + root + r + note - 36 + i for i in iv)
 
 
@@ -183,13 +185,13 @@ class AkordsCase(unittest.TestCase):
         return best
 
     def info(self, e):
-        """The settings, the last chord and the chord slot (notes: up to 5; unused -1)."""
+        """The settings, the last chord and the chord slot (notes: up to 4; unused -1)."""
         o = e.slot(e.out)
         b = o + 0xd0
 
         def notes(a):
-            return [n for n in (s8(e.r8(a + i)) for i in range(5)) if n >= 0]
-        slots = [{'stage': e.r32(b), 'notes': notes(b + 4), 'preset': e.r8(b + 9), 'count': e.r8(b + 10)}]
+            return [n for n in (s8(e.r8(a + i)) for i in range(4)) if n >= 0]
+        slots = [{'stage': e.r32(b), 'notes': notes(b + 4), 'preset': e.r8(b + 8), 'count': e.r8(b + 9)}]
         return {'set': [e.r8(o + 0xc0 + i) for i in range(4)], 'last': notes(o + 0xc4), 'slots': slots}
 
     def chord_of(self, step, scale=MAJOR, root=0, chord='dia', note=36):

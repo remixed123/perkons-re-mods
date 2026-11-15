@@ -16,13 +16,13 @@ class TestAkordsChords(AkordsCase):
             with self.subTest(step=step):
                 self.assertEqual(self.chord_of(step), want)
 
-    def test_diatonic_sevenths_and_ninths_have_every_note(self):
+    def test_diatonic_sevenths_and_ninths(self):
         self.assertEqual(self.chord_of(0, chord='dia7'), [36, 40, 43, 47])     # Cmaj7: C E G B
         self.assertEqual(self.chord_of(1, chord='dia7'), [38, 41, 45, 48])     # Dm7: D F A C
         self.assertEqual(self.chord_of(4, chord='dia7'), [43, 47, 50, 53])     # G7: G B D F
-        self.assertEqual(self.chord_of(0, chord='dia9'), [36, 40, 43, 47, 50])  # Cmaj9: + D
-        self.assertEqual(self.chord_of(1, chord='dia9'), [38, 41, 45, 48, 52])  # Dm9: + E
-        self.assertEqual(self.chord_of(4, chord='dia9'), [43, 47, 50, 53, 57])  # G9: + A
+        self.assertEqual(self.chord_of(0, chord='dia9'), [36, 40, 47, 50])      # Cmaj9: C E B D (no 5th)
+        self.assertEqual(self.chord_of(1, chord='dia9'), [38, 41, 48, 52])      # Dm9: D F C E
+        self.assertEqual(self.chord_of(4, chord='dia9'), [43, 47, 53, 57])      # G9: G B F A
 
     def test_fixed_shapes_are_full_chords(self):
         self.assertEqual(self.chord_of(0, chord='quartal'), [36, 41, 46, 51])   # C F Bb Eb
@@ -42,16 +42,16 @@ class TestAkordsChords(AkordsCase):
         self.play(e, tune_for(1, MINOR), n=64)
         self.assertEqual(self.info(e)['last'], model_chord(1, MINOR), 'off: TUNE alone')
 
-    def test_smooth_voicing_with_four_and_five_notes(self):
+    def test_smooth_voicing_with_four_notes(self):
         e = self.machine(chord='dia7_s')
         self.play(e, tune_for(0, MAJOR), n=2400)                # Cmaj7 C E G B
         self.play(e, tune_for(3, MAJOR), n=2400)                # Fmaj7 nearest: C E F A
         self.assertEqual(self.info(e)['last'], [36, 40, 41, 45])
         e = self.machine(chord='dia9_s')
-        self.play(e, tune_for(0, MAJOR), n=2400)                # Cmaj9 C E G B D
-        self.play(e, tune_for(4, MAJOR), n=2400)                # G9 G B D F A: nearest voicing
+        self.play(e, tune_for(0, MAJOR), n=2400)                # Cmaj9 C E B D
+        self.play(e, tune_for(4, MAJOR), n=2400)                # G9 G B F A: nearest voicing
         last = self.info(e)['last']
-        self.assertEqual(sorted(n % 12 for n in last), [2, 5, 7, 9, 11])
+        self.assertEqual(sorted(n % 12 for n in last), [5, 7, 9, 11])
         self.assertLess(max(last) - min(last), 15, 'kept close, not spread')
 
     def test_harmonic_minor_stacks_its_own_thirds(self):
@@ -86,7 +86,7 @@ class TestAkordsChords(AkordsCase):
     def test_chromatic_falls_back_to_fixed_shapes(self):
         self.assertEqual(self.chord_of(5, scale=CHROMATIC), [41, 45, 48])
         self.assertEqual(self.chord_of(5, scale=CHROMATIC, chord='dia7'), [41, 44, 48, 51])        # Fm7
-        self.assertEqual(self.chord_of(5, scale=CHROMATIC, chord='dia9'), [41, 44, 48, 51, 55])    # Fm9
+        self.assertEqual(self.chord_of(5, scale=CHROMATIC, chord='dia9'), [41, 44, 51, 55])        # Fm9 (no 5th)
 
     def test_every_scale_and_chord_type(self):
         """Root position matches the model for every scale and chord type. The plain types

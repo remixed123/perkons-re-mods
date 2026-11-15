@@ -373,12 +373,12 @@ class TestVoiceSound(AkordsCase):
         self.assertGreater(max(steps) - min(steps), 16, ('clearly heard', steps))
 
     def test_strum_stays_within_the_cpu_budget(self):
-        """While the notes start (a 5-note chord: ~60 ms), against a stock voice."""
+        """While the notes start (a 4-note chord), against a stock voice."""
         from perkons import verify
         from ak_rig import POS1, POS2, PLAY
         worst = {}
         for opts in (0, S.O_STRUM_UP, S.O_STRUM_UP | S.O_MUTATE | S.O_SPREAD | S.O_DROP):
-            e = self.machine(preset=4, chord='dia9')            # Pluck: saws, 5 notes
+            e = self.machine(preset=4, chord='dia9')            # Pluck: saws, 4 notes
             self.voice(e, S.PRESET_FIELDS[4], opts)
             self.play(e, tune_for(0, MAJOR), n=960)
             self.play(e, tune_for(3, MAJOR), n=0)

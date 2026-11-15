@@ -3,7 +3,7 @@
 **AKORDS** is a chord synth voice for the Pērkons, on any of its four voices. Every note plays a
 chord in your scale. The name is Latvian for "chord".
 
-* **Chords from one note**: 3 to 5 notes in your scale, from triads to 7ths, 9ths, quartal and
+* **Chords from one note**: 3 or 4 notes in your scale, from triads to 7ths, 9ths, quartal and
   power chords.
 * **Smooth chords** take the inversion nearest the chord before, so a sequence moves like a
   player's hands instead of jumping as a block.
@@ -109,7 +109,7 @@ Each type comes plain and **smooth**.
 | 2 | Diatonic, smooth | |
 | 3 | **Diatonic 7th** | the same with its 7th (4 notes): Cmaj7, Dm7, Em7, Fmaj7, G7, Am7, Bm7♭5 |
 | 4 | Diatonic 7th, smooth | |
-| 5 | **Diatonic 9th** | the 7th chord with its 9th (5 notes): Cmaj9, Dm9, G9 ... |
+| 5 | **Diatonic 9th** | the 7th chord with its 9th, without the 5th (4 notes: root, 3, 7, 9): Cmaj9, Dm9, G9 ... |
 | 6 | Diatonic 9th, smooth | |
 | 7 | **Quartal** | four notes in fourths (root, 4, ♭7, ♭10): the dub techno stab |
 | 8 | Quartal, smooth | |
@@ -227,7 +227,7 @@ until you save it again.
 A held chord can crackle when it is loud, most often on thick presets such as Hollow, Reese
 and Pad.
 
-**Why it happens.** A chord plays up to five notes at once, each with two oscillators, so a
+**Why it happens.** A chord plays up to four notes at once, each with two oscillators, so a
 held chord is a dense sound that stays at full level for as long as it holds. A held chord
 keeps pushing the same level through the rest of the Pērkons: the voice's analog stage, the
 master compressor and the outputs. When that level is high, the compressor and the analog
