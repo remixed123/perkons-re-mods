@@ -41,7 +41,9 @@
 #define LOG2_E          1.4426950f
 #define PI              3.14159265f
 #define MAGIC           0x4b4c4142u /* 'KLAB' */
-#define COEF_EVERY      16          /* samples between body-peak coefficient updates */
+#define COEF_EVERY      16          /* samples between body-peak coefficient updates: a block */
+#define BLK             COEF_EVERY
+#define INLINE_         static inline __attribute__((always_inline))
 #define MOVED           82          /* knob travel (0-4095, 2%) that hands a value to the knob */
 
 /* the arena: the object, then the lines (int16) */
@@ -238,7 +240,6 @@ typedef struct {
     float b0, b1, b2, a1, a2, s1, s2;
     float env, env_c;                   /* the mod envelope (per COEF_EVERY samples) */
     float a;                            /* 10^(amount 12 dB / 40) */
-    int32_t age;
 } peak_t;
 
 typedef struct {
@@ -317,6 +318,11 @@ typedef struct {
     drive_t drv;
     delay_t dl;
     rumble_t rb;
+    /* the block: COEF_EVERY samples worked out together, then played one by one */
+    int32_t bi;                         /* the next sample of buf to play; COEF_EVERY: a new block */
+    int32_t silent;                     /* the block is silent (skipped) */
+    float buf[COEF_EVERY];              /* the signal, stage by stage; at the end the output */
+    float ab[COEF_EVERY];               /* the amp envelope at each sample (the rumble's ducking) */
 } kl_t;
 
 _Static_assert(__builtin_offsetof(kl_t, algo) == OFF_cVoice_algo, "algo");
@@ -459,20 +465,6 @@ static void peak_coefs(kl_t *k)
     pk->a2 = (1.0f - al / pk->a) * inv;
 }
 
-static inline float peak_run(kl_t *k, float x)
-{
-    peak_t *pk = &k->peak;
-    if (pk->env > 0.001f && pk->age-- <= 0) {
-        pk->age = COEF_EVERY - 1;
-        pk->env *= pk->env_c;
-        peak_coefs(k);
-    }
-    float y = pk->b0 * x + pk->s1;
-    pk->s1 = pk->b1 * x - pk->a1 * y + pk->s2;
-    pk->s2 = pk->b2 * x - pk->a2 * y;
-    return y;
-}
-
 /* ---- drive ------------------------------------------------------------------------------ */
 
 /* the halfband filter's taps (fc = fs/4): h0 = h14, h2 = h12, h4 = h10, h6 = h8, h7 = 0.5 */
@@ -481,21 +473,19 @@ static inline float peak_run(kl_t *k, float x)
 #define HB_C    (-0.0683f)
 #define HB_D    0.3048f
 
-static inline float hb_even(const float *w)
+INLINE_ float hb_even(const float *w)
 {
     return HB_A * (w[0] + w[7]) + HB_B * (w[1] + w[6]) + HB_C * (w[2] + w[5]) + HB_D * (w[3] + w[4]);
 }
 
-static float shape(drive_t *d, int type, float x, float gain)
+INLINE_ float shape(drive_t *d, int type, float x, float gain, float levels, float rate)
 {
     float asym = d->sbias * 0.7f * absf(x);
     switch (type) {
     case DRV_HARD:
         return clampf((x + asym) * gain, -1.0f, 1.0f);
     case DRV_CRUSH: {
-        float levels = exp2f_(16.0f - d->samt * 14.0f);
         float q = floorf_(x * levels + 0.5f) / levels;
-        float rate = 1.0f + absf(d->sbias) * 63.0f;
         d->hold_n += 1.0f;
         if (d->hold_n >= rate) {
             d->hold_n -= rate;
@@ -512,42 +502,67 @@ static float shape(drive_t *d, int type, float x, float gain)
     }
 }
 
-static float drive_run(kl_t *k, float x)
+/* the drive over the first n samples of x (in place): those of the hit, as before the block;
+ * type a constant (each type its own loop) */
+INLINE_ void drive_loop(kl_t *k, float *x, int n, int type)
 {
     drive_t *d = &k->drv;
-    int type = k->page.drv_type;
     const float sc = 0.005f;
-    d->smix += sc * (k->role[ROLE_DRIVE_MIX] - d->smix);
-    d->samt += sc * (k->drv_amt - d->samt);
-    d->stone += sc * (k->drv_tone - d->stone);
-    d->sbias += sc * (k->pre->drv_bias - d->sbias);
-    /* the input's history runs always: the wet path comes out 7 samples late, and the dry
-     * signal is taken 7 samples late too, so they line up in the mix (no comb filtering) and
-     * the timing doesn't jump when the drive turns on or off */
-    d->pos = (d->pos - 1) & 7;
-    d->up[d->pos] = d->up[d->pos + 8] = x;
-    const float *w = &d->up[d->pos];
-    float dry = w[7];
-    if (d->smix < 0.0005f && k->role[ROLE_DRIVE_MIX] <= 0.0f)
-        return dry;
-    float gain = type == DRV_FOLD ? 1.0f + d->samt * 15.0f : (type == DRV_CRUSH ? 1.0f : 1.0f + d->samt * 20.0f);
+    float mix_to = k->role[ROLE_DRIVE_MIX], amt_to = k->drv_amt, tone_to = k->drv_tone, bias_to = k->pre->drv_bias;
+    float smix = d->smix, samt = d->samt, stone = d->stone, sbias = d->sbias;
+    float dcx = d->dc_x, dcy = d->dc_y, tilt = d->tilt;
+    int pos = d->pos;
+    /* crush's levels and hold, from the amount and bias at the block's start (they glide slowly) */
+    float levels = type == DRV_CRUSH ? exp2f_(16.0f - samt * 14.0f) : 0.0f;
+    float rate = 1.0f + absf(sbias) * 63.0f;
+    for (int j = 0; j < n; j++) {
+        smix += sc * (mix_to - smix);
+        samt += sc * (amt_to - samt);
+        stone += sc * (tone_to - stone);
+        sbias += sc * (bias_to - sbias);
+        d->sbias = sbias;                       /* (shape() reads it) */
+        /* the input's history runs always: the wet path comes out 7 samples late, and the dry
+         * signal is taken 7 samples late too, so they line up in the mix (no comb filtering) and
+         * the timing doesn't jump when the drive turns on or off */
+        pos = (pos - 1) & 7;
+        d->up[pos] = d->up[pos + 8] = x[j];
+        const float *w = &d->up[pos];
+        float dry = w[7];
+        if (smix < 0.0005f && mix_to <= 0.0f) {
+            x[j] = dry;
+            continue;
+        }
+        float gain = type == DRV_FOLD ? 1.0f + samt * 15.0f : (type == DRV_CRUSH ? 1.0f : 1.0f + samt * 20.0f);
 
-    /* 2x up: the even phase through the halfband, the odd phase a 3-sample delay */
-    float za = shape(d, type, 2.0f * hb_even(w), gain);
-    float zb = shape(d, type, w[3], gain);
-    /* 2x down */
-    d->de[d->pos] = d->de[d->pos + 8] = za;
-    d->dodd[d->pos] = d->dodd[d->pos + 8] = zb;
-    float y = hb_even(&d->de[d->pos]) + 0.5f * d->dodd[d->pos + 4];   /* the centre: between de[3] and de[4] */
-    y *= type == DRV_FOLD ? 1.0f / (1.0f + d->samt * 2.0f) : (type == DRV_CRUSH ? 1.0f : 1.0f / (1.0f + d->samt * 2.5f));
+        /* 2x up: the even phase through the halfband, the odd phase a 3-sample delay */
+        float za = shape(d, type, 2.0f * hb_even(w), gain, levels, rate);
+        float zb = shape(d, type, w[3], gain, levels, rate);
+        /* 2x down */
+        d->de[pos] = d->de[pos + 8] = za;
+        d->dodd[pos] = d->dodd[pos + 8] = zb;
+        float y = hb_even(&d->de[pos]) + 0.5f * d->dodd[pos + 4];   /* the centre: between de[3] and de[4] */
+        y *= type == DRV_FOLD ? 1.0f / (1.0f + samt * 2.0f) : (type == DRV_CRUSH ? 1.0f : 1.0f / (1.0f + samt * 2.5f));
 
-    float dc = y - d->dc_x + 0.999f * d->dc_y;  /* DC blocker */
-    d->dc_x = y;
-    d->dc_y = dc;
-    d->tilt += 0.12f * (dc - d->tilt);          /* tone: a tilt around ~1 kHz */
-    float t = (d->stone - 0.5f) * 2.0f;
-    float shaped = d->tilt * (1.0f - t * 0.6f) + (dc - d->tilt) * (1.0f + t * 0.6f);
-    return d->smix * shaped + (1.0f - d->smix) * dry;
+        float dc = y - dcx + 0.999f * dcy;      /* DC blocker */
+        dcx = y;
+        dcy = dc;
+        tilt += 0.12f * (dc - tilt);            /* tone: a tilt around ~1 kHz */
+        float t = (stone - 0.5f) * 2.0f;
+        float shaped = tilt * (1.0f - t * 0.6f) + (dc - tilt) * (1.0f + t * 0.6f);
+        x[j] = smix * shaped + (1.0f - smix) * dry;
+    }
+    d->smix = smix, d->samt = samt, d->stone = stone, d->sbias = sbias;
+    d->dc_x = dcx, d->dc_y = dcy, d->tilt = tilt, d->pos = pos;
+}
+
+static __attribute__((noinline)) void drive_block(kl_t *k, float *x, int n)
+{
+    switch (k->page.drv_type) {
+    case DRV_HARD:  drive_loop(k, x, n, DRV_HARD); break;
+    case DRV_CRUSH: drive_loop(k, x, n, DRV_CRUSH); break;
+    case DRV_FOLD:  drive_loop(k, x, n, DRV_FOLD); break;
+    default:        drive_loop(k, x, n, DRV_SOFT); break;
+    }
 }
 
 /* ---- delay (digital) ------------------------------------------------------------------ */
@@ -610,7 +625,8 @@ static float delay_tap(const delay_t *dl, float t)
     return ((float)dl->buf[i0] + fr * (float)(dl->buf[i1] - dl->buf[i0])) * (1.0f / Q_LINE);
 }
 
-static float delay_run(kl_t *k, float x)
+/* the delay over the block (in place) */
+static __attribute__((noinline)) void delay_block(kl_t *k, float *x)
 {
     delay_t *dl = &k->dl;
     float mix = k->role[ROLE_DELAY_MIX];
@@ -619,68 +635,76 @@ static float delay_run(kl_t *k, float x)
             delay_clear(dl);
             dl->quiet = -1;
         }
-        return x;
+        return;
     }
-    int div = DL_DIV[dl->band];
-    dl->acc += x;
-    if (++dl->n >= div) {                       /* a step at the line's rate */
-        float in = dl->acc * (1.0f / div);
-        dl->acc = 0.0f;
-        dl->n = 0;
-        /* the time: small changes (a tempo drifting) glide, a jump (a page key, a new tempo)
-         * crossfades from the old tap to the new one over ~50 ms, as the original */
-        float d = dl->target - dl->t;
-        if (dl->xfading) {
-            dl->t_new = dl->target;
-            dl->xf += 0.02f * div / 48.0f;          /* 50 ms */
-            if (dl->xf >= 1.0f) {
-                dl->xfading = 0;
-                dl->t = dl->t_new;
-            }
-        } else if (d > 4.0f || d < -4.0f) {
-            if (dl->quiet < 0 || dl->quiet >= DL_LEN) {
-                dl->t = dl->target;                  /* nothing in the line: jump */
-            } else {
-                dl->xfading = 1;
-                dl->xf = 0.0f;
-                dl->t_new = dl->target;
-            }
-        } else {
-            dl->t += d;
-        }
-        float rd = delay_tap(dl, dl->t);
-        if (dl->xfading)
-            rd += dl->xf * (delay_tap(dl, dl->t_new) - rd);
-        dl->lp += dl->tone_c * (rd - dl->lp);
-        float wet = dl->lp * dl->gain;
-        dl->buf[dl->w] = to_line(in * dl->in_g + wet * dl->fb);
-        if (++dl->w >= DL_LEN)
-            dl->w = 0;
-        dl->prev = dl->cur;
-        dl->cur = wet;
-        /* fades for a band change (~5 ms) */
-        if (dl->gain > dl->gain_to) {
-            dl->gain -= 0.005f * div;
-            if (dl->gain <= 0.0f) {
-                dl->gain = 0.0f;
-                dl->band = dl->pending;
-                delay_clear(dl);
-                dl->t = dl->target = k->dl_secs * SR / DL_DIV[dl->band];
-                dl->xfading = 0;
-                float c = 0.05f + 0.9f * (float)k->page.dl_tone / (NDTONE - 1);
-                dl->tone_c = k->page.dl_tone == NDTONE - 1 ? 1.0f : 1.0f - powi(1.0f - c, DL_DIV[dl->band]);
-                dl->gain_to = 1.0f;
-            }
-        } else if (dl->gain < dl->gain_to) {
-            dl->gain += 0.005f * div;
-            if (dl->gain > 1.0f)
-                dl->gain = 1.0f;
-        }
-        dl->quiet = absf(in) > 1e-5f || absf(wet) > 1e-5f ? 0 : dl->quiet + 1;
-    }
-    float wet = dl->prev + (dl->cur - dl->prev) * ((float)dl->n / div);
     /* up to halfway the echoes come up under the full kick; then the kick fades out */
-    return mix < 0.5f ? x + 2.0f * mix * wet : 2.0f * (1.0f - mix) * x + wet;
+    float dry_g = mix < 0.5f ? 1.0f : 2.0f * (1.0f - mix), wet_g = mix < 0.5f ? 2.0f * mix : 1.0f;
+    float acc = dl->acc, prev = dl->prev, cur = dl->cur;
+    int n = dl->n, div = DL_DIV[dl->band];
+    for (int j = 0; j < BLK; j++) {
+        acc += x[j];
+        if (++n >= div) {                       /* a step at the line's rate */
+            float in = acc * (1.0f / div);
+            acc = 0.0f;
+            n = 0;
+            /* the time: small changes (a tempo drifting) glide, a jump (a page key, a new tempo)
+             * crossfades from the old tap to the new one over ~50 ms, as the original */
+            float d = dl->target - dl->t;
+            if (dl->xfading) {
+                dl->t_new = dl->target;
+                dl->xf += 0.02f * div / 48.0f;          /* 50 ms */
+                if (dl->xf >= 1.0f) {
+                    dl->xfading = 0;
+                    dl->t = dl->t_new;
+                }
+            } else if (d > 4.0f || d < -4.0f) {
+                if (dl->quiet < 0 || dl->quiet >= DL_LEN) {
+                    dl->t = dl->target;                  /* nothing in the line: jump */
+                } else {
+                    dl->xfading = 1;
+                    dl->xf = 0.0f;
+                    dl->t_new = dl->target;
+                }
+            } else {
+                dl->t += d;
+            }
+            float rd = delay_tap(dl, dl->t);
+            if (dl->xfading)
+                rd += dl->xf * (delay_tap(dl, dl->t_new) - rd);
+            dl->lp += dl->tone_c * (rd - dl->lp);
+            float wet = dl->lp * dl->gain;
+            dl->buf[dl->w] = to_line(in * dl->in_g + wet * dl->fb);
+            if (++dl->w >= DL_LEN)
+                dl->w = 0;
+            prev = cur;
+            cur = wet;
+            /* fades for a band change (~5 ms) */
+            if (dl->gain > dl->gain_to) {
+                dl->gain -= 0.005f * div;
+                if (dl->gain <= 0.0f) {
+                    dl->gain = 0.0f;
+                    dl->band = dl->pending;
+                    delay_clear(dl);
+                    acc = prev = cur = 0.0f;    /* (as delay_clear left them) */
+                    n = 0;
+                    dl->t = dl->target = k->dl_secs * SR / DL_DIV[dl->band];
+                    dl->xfading = 0;
+                    float c = 0.05f + 0.9f * (float)k->page.dl_tone / (NDTONE - 1);
+                    dl->tone_c = k->page.dl_tone == NDTONE - 1 ? 1.0f : 1.0f - powi(1.0f - c, DL_DIV[dl->band]);
+                    dl->gain_to = 1.0f;
+                    div = DL_DIV[dl->band];
+                }
+            } else if (dl->gain < dl->gain_to) {
+                dl->gain += 0.005f * div;
+                if (dl->gain > 1.0f)
+                    dl->gain = 1.0f;
+            }
+            dl->quiet = absf(in) > 1e-5f || absf(wet) > 1e-5f ? 0 : dl->quiet + 1;
+        }
+        float wet = prev + (cur - prev) * ((float)n / div);
+        x[j] = dry_g * x[j] + wet_g * wet;
+    }
+    dl->acc = acc, dl->prev = prev, dl->cur = cur, dl->n = n;
 }
 
 static int delay_ringing(const kl_t *k)
@@ -744,20 +768,29 @@ static float rumble_step(kl_t *k, float in)
     return tanh_(r->l2 * drv) / drv;
 }
 
-static float rumble_run(kl_t *k, float x)
+/* the rumble over the block, added to x (from x's own samples, as before); amp: the amp
+ * envelope at each sample; it starts releasing at sample `stop` (the hit's end) */
+static __attribute__((noinline)) void rumble_block(kl_t *k, float *x, const float *amp, int stop)
 {
     rumble_t *r = &k->rb;
-    r->acc += x;
-    if (++r->n >= RB_DIV) {
-        r->prev = r->cur;
-        r->cur = rumble_step(k, r->acc * (1.0f / RB_DIV));
-        r->acc = 0.0f;
-        r->n = 0;
+    float g = k->pre->r_mix * r->sgain, rel = r->release, rc = r->release_c;
+    float acc = r->acc, prev = r->prev, cur = r->cur;
+    int n = r->n;
+    for (int j = 0; j < BLK; j++) {
+        acc += x[j];
+        if (++n >= RB_DIV) {
+            prev = cur;
+            cur = rumble_step(k, acc * (1.0f / RB_DIV));
+            acc = 0.0f;
+            n = 0;
+        }
+        if (j >= stop)
+            rel *= rc;
+        float y = prev + (cur - prev) * ((float)n / RB_DIV);
+        x[j] += y * (1.0f - amp[j] * 0.85f) * g * rel;
     }
-    if (!k->sounding)
-        r->release *= r->release_c;
-    float y = r->prev + (r->cur - r->prev) * ((float)r->n / RB_DIV);
-    return y * (1.0f - k->amp * 0.85f) * k->pre->r_mix * r->sgain * r->release;
+    r->release = rel;
+    r->acc = acc, r->prev = prev, r->cur = cur, r->n = n;
 }
 
 static int rumble_ringing(const kl_t *k)
@@ -915,7 +948,6 @@ static void trigger(cVoice *v)
     /* body peak: its mod envelope falls over the sweep time */
     k->peak.env = pre->body_amt > 0.001f && pre->body_mod > 0.001f ? 1.0f : 0.0f;
     k->peak.env_c = exp2f_(-LOG2_E * COEF_EVERY / (pre->sweep_time * SR));
-    k->peak.age = 0;
     peak_coefs(k);
     k->rb.release = 1.0f;
     if (k->dl.quiet < 0)
@@ -940,20 +972,163 @@ static void init(cVoice *v)
     k->cur_role = role_of(k->algo);
     k->ref2 = *k->param[3];
     k->armed = 0;
+    k->bi = COEF_EVERY;                 /* a new block with the next sample */
     update(v);
 }
 
-/* ---- audio (per sample) ---------------------------------------------------------------- */
+/* ---- audio: a block of BLK samples at a time ------------------------------------------- */
 
-/* the last stage: peaks above LIM_THR are turned down within ~0.3 ms, and the gain comes back
- * over ~50 ms; then a soft clip rounds what got through before the limiter caught up */
-static float limiter(kl_t *k, float x)
+/* The firmware asks for one sample at a time; the engine works out BLK of them together, stage
+ * by stage (body, body peak, drive, delay, rumble, noise, limiter), each stage one loop over the
+ * block. BLK is the body peak's control step and divides the firmware's 32-sample half; the
+ * voice starts at a half's start, and so do the triggers, so a hit starts a block. */
+
+/* the body over the block into x (with its click, attack, amp and saturation), the amp at each
+ * sample into amp; returns how many samples belong to the hit (those after are 0): BLK while it
+ * sounds, up to and including the sample where it ends */
+static __attribute__((noinline)) int body_block(kl_t *k, float *x, float *amp)
 {
-    float m = absf(x);
-    k->lim = m > k->lim ? k->lim + (m - k->lim) * LIM_ATT : k->lim * LIM_REL;
-    if (k->lim > LIM_THR)
-        x *= LIM_THR / k->lim;
-    return soft_knee(x, CLIP_KNEE, CLIP_CEIL);
+    const kl_preset_t *pre = k->pre;
+    if (!k->sounding) {
+        for (int j = 0; j < BLK; j++)
+            x[j] = amp[j] = 0.0f;
+        return 0;
+    }
+    float phase = k->phase, pitch = k->pitch_env, drop = k->drop_env, tick = k->tick_env;
+    float end_f = k->end_f, span = k->span, sweep = k->sweep, dd = k->drop_dec;
+    float pc = k->pitch_c, tc = k->tick_c;
+    float soft = k->click_soft, cenv = k->click_env, lp = k->click_lp, hp = k->click_hp;
+    float sc = k->soft_c, cc = k->click_c, lpc = k->click_lp_c, hpc = k->click_hp_c, click = pre->click;
+    float atk = k->atk_env, ac = k->atk_c, a = k->amp, amp_c = k->amp_c;
+    float g = k->vel * pre->volume, sd = k->sat_drive, si = k->sat_inv;
+    uint32_t seed = k->seed;
+    int tri = pre->triangle, sat = pre->sat, drone = k->drone, n = BLK;
+    for (int j = 0; j < BLK; j++) {
+        if (j >= n) {
+            x[j] = amp[j] = 0.0f;
+            continue;
+        }
+        /* pitch: the drop's floor, the slow drop above it, the fast sweep, the tick's octave */
+        float f = (end_f + span * drop + sweep * pitch) * (1.0f + tick);
+        tick *= tc;
+        pitch *= pc;
+        drop -= dd;
+        if (drop < 0.0f)
+            drop = 0.0f;
+        float p = phase + f * (1.0f / SR);
+        if (p >= 1.0f)
+            p -= 1.0f;
+        phase = p;
+        float osc = tri ? (p < 0.5f ? 4.0f * p - 1.0f : 3.0f - 4.0f * p) : fast_sin(p);
+
+        /* the click: noise, 0.5 ms soft start, 8 ms decay, band-limited 150 Hz-6 kHz */
+        seed = lcg(seed);
+        soft = 1.0f - (1.0f - soft) * sc;
+        float raw = noise_of(seed) * click * cenv * soft;
+        cenv *= cc;
+        lp += lpc * (raw - lp);
+        hp += hpc * (lp - hp);
+
+        atk = 1.0f - (1.0f - atk) * ac;
+        if (!drone) {
+            a *= amp_c;
+            if (a < 0.001f) {
+                a = 0.0f;
+                k->sounding = 0;
+                n = j + 1;              /* this sample still goes through the peak and drive */
+            }
+        }
+        float body = osc + (lp - hp);
+        if (sat)
+            body = tanh_(body * sd) * si;
+        x[j] = body * atk * a * g;
+        amp[j] = a;
+    }
+    k->phase = phase, k->pitch_env = pitch, k->drop_env = drop, k->tick_env = tick;
+    k->click_soft = soft, k->click_env = cenv, k->click_lp = lp, k->click_hp = hp;
+    k->atk_env = atk, k->amp = a, k->seed = seed;
+    return n;
+}
+
+/* the body peak (RBJ peaking EQ) over the first n samples of x; its coefficients follow its
+ * envelope once a block */
+static __attribute__((noinline)) void peak_block(kl_t *k, float *x, int n)
+{
+    peak_t *pk = &k->peak;
+    if (pk->env > 0.001f) {
+        pk->env *= pk->env_c;
+        peak_coefs(k);
+    }
+    float b0 = pk->b0, b1 = pk->b1, b2 = pk->b2, a1 = pk->a1, a2 = pk->a2, s1 = pk->s1, s2 = pk->s2;
+    for (int j = 0; j < n; j++) {
+        float v = x[j], y = b0 * v + s1;
+        s1 = b1 * v - a1 * y + s2;
+        s2 = b2 * v - a2 * y;
+        x[j] = y;
+    }
+    pk->s1 = s1, pk->s2 = s2;
+}
+
+/* the noise layer over the block, decaying with DECAY, added to x */
+static __attribute__((noinline)) void noise_block(kl_t *k, float *x)
+{
+    float env = k->noise_env, c = k->noise_c, pink = k->pink, hp = k->noise_hp;
+    float g = NOISE_LEVEL * k->vel * k->pre->volume;
+    uint32_t seed = k->seed;
+    int is_pink = k->noise == NOISE_PINK;
+    for (int j = 0; j < BLK && env > 0.0f; j++) {
+        env *= c;
+        if (env < 0.0001f) {
+            env = 0.0f;
+            break;
+        }
+        seed = lcg(seed);
+        float v = noise_of(seed);
+        if (is_pink) {
+            pink += 0.045f * (v - pink);
+            v = pink * 2.88f;
+        } else {
+            v *= 0.8f;
+        }
+        hp += 0.02f * (v - hp);
+        x[j] += (v - hp) * env * g;
+    }
+    k->noise_env = env, k->pink = pink, k->noise_hp = hp, k->seed = seed;
+}
+
+/* the block: each stage over BLK samples, then the level and the limiter into buf. Silent (no
+ * hit, no noise, no tails ringing): the block is skipped (its stages' states wait) */
+static __attribute__((noinline)) void block(kl_t *k)
+{
+    float *x = k->buf, *amp = k->ab;
+    int tails = delay_ringing(k) || rumble_ringing(k);
+    k->silent = !k->sounding && k->noise_env <= 0.0f && !tails;
+    if (k->silent)
+        return;
+    const kl_preset_t *pre = k->pre;
+    int was = k->sounding;
+    int n = body_block(k, x, amp);
+    if (n > 0) {
+        if (pre->body_amt > 0.001f)
+            peak_block(k, x, n);
+        drive_block(k, x, n);
+    }
+    delay_block(k, x);
+    if (pre->r_mix > 0.001f)
+        rumble_block(k, x, amp, was ? (k->sounding ? BLK : n - 1) : 0);
+    if (k->noise_env > 0.0f)
+        noise_block(k, x);
+    /* the level, then the limiter: peaks above LIM_THR are turned down within ~0.3 ms, and the
+     * gain comes back over ~50 ms; then a soft clip rounds what got through before it caught up */
+    float lvl = LEVEL * k->trim, lim = k->lim;
+    for (int j = 0; j < BLK; j++) {
+        float v = x[j] * lvl, m = absf(v);
+        lim = m > lim ? lim + (m - lim) * LIM_ATT : lim * LIM_REL;
+        if (lim > LIM_THR)
+            v *= LIM_THR / lim;
+        x[j] = soft_knee(v, CLIP_KNEE, CLIP_CEIL);
+    }
+    k->lim = lim;
 }
 
 static int16_t render(cVoice *v)
@@ -962,74 +1137,15 @@ static int16_t render(cVoice *v)
     fw_tick_mute_fade(v);
     if (k->magic != MAGIC)
         return 0;
-    int tails = delay_ringing(k) || rumble_ringing(k);
-    if (!k->sounding && k->noise_env <= 0.0f && !tails)
+    if (k->bi >= BLK) {
+        block(k);
+        k->bi = 0;
+    }
+    if (k->silent) {
+        k->bi++;
         return 0;
-    const kl_preset_t *pre = k->pre;
-    float s = 0.0f;
-
-    if (k->sounding) {
-        /* pitch: the drop's floor, the slow drop above it, the fast sweep, the tick's octave */
-        float f = (k->end_f + k->span * k->drop_env + k->sweep * k->pitch_env) * (1.0f + k->tick_env);
-        k->tick_env *= k->tick_c;
-        k->pitch_env *= k->pitch_c;
-        k->drop_env -= k->drop_dec;
-        if (k->drop_env < 0.0f)
-            k->drop_env = 0.0f;
-        float p = k->phase + f * (1.0f / SR);
-        if (p >= 1.0f)
-            p -= 1.0f;
-        k->phase = p;
-        float osc = pre->triangle ? (p < 0.5f ? 4.0f * p - 1.0f : 3.0f - 4.0f * p) : fast_sin(p);
-
-        /* the click: noise, 0.5 ms soft start, 8 ms decay, band-limited 150 Hz-6 kHz */
-        k->seed = lcg(k->seed);
-        k->click_soft = 1.0f - (1.0f - k->click_soft) * k->soft_c;
-        float raw = noise_of(k->seed) * pre->click * k->click_env * k->click_soft;
-        k->click_env *= k->click_c;
-        k->click_lp += k->click_lp_c * (raw - k->click_lp);
-        k->click_hp += k->click_hp_c * (k->click_lp - k->click_hp);
-
-        k->atk_env = 1.0f - (1.0f - k->atk_env) * k->atk_c;
-        if (!k->drone) {
-            k->amp *= k->amp_c;
-            if (k->amp < 0.001f) {
-                k->amp = 0.0f;
-                k->sounding = 0;
-            }
-        }
-        float body = osc + (k->click_lp - k->click_hp);
-        if (pre->sat)
-            body = tanh_(body * k->sat_drive) * k->sat_inv;
-        s = body * k->atk_env * k->amp * k->vel * pre->volume;
-        if (pre->body_amt > 0.001f)
-            s = peak_run(k, s);
-        s = drive_run(k, s);
     }
-    s = delay_run(k, s);
-    if (pre->r_mix > 0.001f)
-        s += rumble_run(k, s);
-
-    if (k->noise_env > 0.0f) {          /* the noise layer, decaying with DECAY */
-        k->noise_env *= k->noise_c;
-        if (k->noise_env < 0.0001f) {
-            k->noise_env = 0.0f;
-        } else {
-            k->seed = lcg(k->seed);
-            float n = noise_of(k->seed);
-            if (k->noise == NOISE_PINK) {
-                k->pink += 0.045f * (n - k->pink);
-                n = k->pink * 2.88f;
-            } else {
-                n *= 0.8f;
-            }
-            k->noise_hp += 0.02f * (n - k->noise_hp);
-            s += (n - k->noise_hp) * k->noise_env * NOISE_LEVEL * k->vel * pre->volume;
-        }
-    }
-
-    float out = limiter(k, s * (LEVEL * k->trim));
-    return (int16_t)(((int32_t)out * k->gain) >> 16);
+    return (int16_t)(((int32_t)k->buf[k->bi++] * k->gain) >> 16);
 }
 
 /* ---- vtable and construction --------------------------------------------------------- */
