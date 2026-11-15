@@ -3,7 +3,7 @@
     {
       "id": "voice-akords",
       "title": "AKORDS",
-      "summary": "CHORD SYNTH: EACH NOTE PLAYS A CHORD OF UP TO 5 NOTES IN YOUR SCALE, WITH CHORD PROGRESSIONS, PRESETS, INTELLIGENT RANDOMISATION AND CHORD EFFECTS.",
+      "summary": "CHORD SYNTH: PLAYS CHORD IN SCALE, WITH CHORD PROGRESSIONS, PRESETS AND RANDOM SOUND GENERATION.",
       "patches": [
         "voice_akords"
       ],

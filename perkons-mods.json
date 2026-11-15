@@ -49,7 +49,7 @@
    "id": "voice-akords",
    "dir": "voice-akords",
    "title": "AKORDS",
-   "summary": "CHORD SYNTH: EACH NOTE PLAYS A CHORD OF UP TO 5 NOTES IN YOUR SCALE, WITH CHORD PROGRESSIONS, PRESETS, INTELLIGENT RANDOMISATION AND CHORD EFFECTS.",
+   "summary": "CHORD SYNTH: PLAYS CHORD IN SCALE, WITH CHORD PROGRESSIONS, PRESETS AND RANDOM SOUND GENERATION.",
    "readme": "voice-akords/README.md",
    "patches": [
     "voice_akords"
@@ -151,7 +151,7 @@
    "id": "voice-synth-lab",
    "dir": "voice-synth-lab",
    "title": "SYNTH LAB",
-   "summary": "FROM CLASSIC ANALOG SYNTH SOUNDS TO MANGLED, MODULATED, MULTI-LAYERED SOUNDSCAPES. THREE OSCILLATORS, HARD SYNC, PRESETS AND INTELLIGENT RANDOMISATION.",
+   "summary": "FROM CLASSIC ANALOG SOUNDS TO MANGLED, MODULATED SOUNDSCAPES. 3 OSCILLATORS, HARD SYNC, PRESETS AND INTELLIGENT RANDOMISATION.",
    "readme": "voice-synth-lab/README.md",
    "patches": [
     "voice_synth_lab"
