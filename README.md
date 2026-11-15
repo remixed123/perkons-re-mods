@@ -26,7 +26,7 @@ on your computer.
 | mod | what it does | how to use it |
 |---|---|---|
 | **voice-zibens** | a new synth voice: scale-locked resonant saw, PWM square, wavefolded sine | [voice-zibens/README.md](voice-zibens/README.md) |
-| **voice-kick-lab** | KICK LAB: a kick drum synth voice, from solid and clean to dirty, distorted texture; soft, hard, crush and fold drive, a synced delay, 16 presets. *In development: not offered in the Mod Matrix yet* | [voice-kick-lab/README.md](voice-kick-lab/README.md) |
+| **voice-kick-lab** | KICK LAB: a kick drum synth voice, from solid and clean to dirty, distorted texture; soft, hard, crush and fold drive, a synced delay, 16 presets | [voice-kick-lab/README.md](voice-kick-lab/README.md) |
 | **voice-synth-lab** | SYNTH LAB: a mono synth voice, from classic analog sounds to mangled, modulated, multi-layered soundscapes; three oscillators with hard sync, a wavefolder, eight LFOs, 16 presets and 5 starters, Random, Tweak and Mutate | [voice-synth-lab/README.md](voice-synth-lab/README.md) |
 | **voice-step-sampler** | STEP SAMPLER: 64 samples per bank, any length, streamed from the card, each step its own; attack / start / slice, forward / choke / reverse | [voice-step-sampler/README.md](voice-step-sampler/README.md) |
 | **fx-reverb** | a reverb in place of the BBD delay, switched in the config menu | [fx-reverb/README.md](fx-reverb/README.md) |
