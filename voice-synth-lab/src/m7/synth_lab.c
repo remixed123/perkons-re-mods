@@ -30,6 +30,7 @@
 #include "sl_sound.h"
 #include "sl_presets.h"
 #include "sl_minblep.h"
+#include "sl_sine.h"
 
 #define SR              48000.0f
 #define CTL             16          /* samples between control steps (LFOs, filter, pitch) */
@@ -146,10 +147,7 @@ typedef struct {
     float ph, dt;                       /* phase 0-1, step per sample */
     float g, g_step;                    /* gain (level x volume LFO), ramped over a control step */
     float pw;
-    float ring[MB_TAPS];                /* minBLEP residuals still to add, from the next sample on */
-    int32_t rp;
     int32_t wave;
-    int32_t idle;                       /* silent: only its phase runs (its residuals cleared) */
 } osc_t;
 
 typedef struct {
@@ -203,8 +201,12 @@ typedef struct {
     float note_midi;                    /* the note's pitch (MIDI, may be fractional while gliding) */
     float pitch, pitch_to;              /* log2 Hz of the note now, and where it glides */
     float vel;
-    /* control */
-    int32_t ctl;
+    /* the block: CTL samples worked out together at each control step, then played one by one */
+    int32_t bi;                         /* the next sample of buf to play; CTL: a new block */
+    int32_t stop;                       /* the amp envelope ended in this block */
+    float buf[CTL];                     /* the block's signal, stage by stage; at the end its output */
+    float syn[CTL];                     /* the master's wraps: the time from each to the next sample, or -1 */
+    float ring[CTL + MB_TAPS];          /* minBLEP residuals (all oscillators', x their gains) */
     int32_t live;                       /* oscillators (bits) with a level: the others only keep their phase */
     lfo_t lfo[NLFO];
     uint32_t rng;
@@ -325,6 +327,18 @@ INLINE float sin2pi(float p)
         x = -PI - x;
     float x2 = x * x;
     return x * (1.0f - x2 * (1.0f / 6 - x2 * (1.0f / 120 - x2 * (1.0f / 5040))));
+}
+
+/* sin(2 pi p), any p: the table, interpolated */
+INLINE float sin_t(float p)
+{
+    float x = p * (float)SINE_N;
+    int32_t i = (int32_t)x;
+    if ((float)i > x)
+        i--;
+    float f = x - (float)i;
+    const float *t = SINE + (i & (SINE_N - 1));
+    return t[0] + (t[1] - t[0]) * f;
 }
 
 INLINE uint32_t lcg(uint32_t s)
@@ -621,7 +635,7 @@ static void lfo_step(sy_t *k)
         case SL_S_RAMP:   y = 1.0f - p; break;
         case SL_S_SQUARE: y = p < 0.5f ? 1.0f : 0.0f; break;
         case SL_S_RANDOM: y = l->held; break;
-        default:          y = 0.5f + 0.5f * sin2pi(p); break;
+        default:          y = 0.5f + 0.5f * sin_t(p); break;
         }
         l->val = y;
     }
@@ -720,7 +734,6 @@ static void control(sy_t *k)
             o->g = o->g_step = 0.0f;
         } else {
             o->g_step = (g - o->g) * (1.0f / CTL);
-            o->idle = 0;
             live |= 1 << i;
         }
     }
@@ -850,9 +863,9 @@ static void trigger(cVoice *v)
         for (int i = 0; i < NOSC; i++) {
             k->o[i].ph = 0.0f;
             k->o[i].g = 0.0f;
-            for (int t = 0; t < MB_TAPS; t++)
-                k->o[i].ring[t] = 0.0f;
         }
+        for (int t = 0; t < CTL + MB_TAPS; t++)
+            k->ring[t] = 0.0f;
         k->low = k->band = k->low2 = k->band2 = k->one = 0.0f;
         k->lad[0] = k->lad[1] = k->lad[2] = k->lad[3] = 0.0f;
         k->fold = 0.0f;
@@ -869,7 +882,8 @@ static void trigger(cVoice *v)
     k->elapsed = 0;
     k->released = 0;
     k->sounding = 1;
-    k->ctl = 0;                         /* a control step at once */
+    k->bi = CTL;                        /* a new block (a control step) at once */
+    k->stop = 0;
 }
 
 static void init(cVoice *v)
@@ -890,130 +904,186 @@ static void init(cVoice *v)
     set_note(k, midi_of(k, tune_step(k, -1)), 0);
 }
 
-/* ---- audio (per sample) ---------------------------------------------------------------- */
+/* ---- audio: a block of CTL samples at each control step ------------------------------------ */
 
-/* add the band-limited correction for a jump h, `t` samples (0-1) before the next sample */
-INLINE void blep_add(osc_t *o, float h, float t)
+/* The firmware asks for one sample at a time; the engine works out CTL of them together, stage
+ * by stage (oscillators, fold, filter, drive, amp envelope and output), each stage one tight
+ * loop over the block with its choices (the wave, the filter type) made once. CTL divides the
+ * firmware's 32-sample half, and a note starts a new block, so every half holds whole blocks. */
+
+/* add the band-limited correction for a jump h (already x the oscillator's gain), `t` samples
+ * (0-1) before the sample r[0] */
+static __attribute__((noinline)) void blep_add(float *r, float h, float t)
 {
     float x = t * (float)MB_PHASES;
     int i = (int)x;
     if (i >= MB_PHASES)
         i = MB_PHASES - 1;
-    float a = x - (float)i;
+    float a = x - (float)i, h1 = h * a, h0 = h - h1;
     const float *r0 = MINBLEP[i], *r1 = MINBLEP[i + 1];
+#pragma GCC unroll 16
     for (int j = 0; j < MB_TAPS; j++)
-        o->ring[(o->rp + j) & (MB_TAPS - 1)] += h * (r0[j] + (r1[j] - r0[j]) * a);
+        r[j] += h0 * r0[j] + h1 * r1[j];
 }
 
-INLINE float naive(const osc_t *o, float p, uint32_t *rng)
+INLINE float wave_at(int w, float p, float pw, uint32_t *rng)
 {
-    switch (o->wave) {
-    case SL_W_SINE:  return sin2pi(p);
+    switch (w) {
+    case SL_W_SINE:  return sin_t(p);
     case SL_W_TRI:   return p < 0.5f ? 4.0f * p - 1.0f : 3.0f - 4.0f * p;
     case SL_W_RAMP:  return 1.0f - 2.0f * p;
-    case SL_W_PULSE: return p < o->pw ? 1.0f : -1.0f;
+    case SL_W_PULSE: return p < pw ? 1.0f : -1.0f;
     case SL_W_NOISE: *rng = lcg(*rng); return (float)(int32_t)*rng * (1.0f / 2147483648.0f);
     default:         return 2.0f * p - 1.0f;
     }
 }
 
 /* the triangle's corners: the 2-point BLAMP (as Akords) */
-INLINE float blamp(float t, float dt)
+INLINE float blamp(float t, float dt, float idt)
 {
     if (t < dt) {
-        float n = t / dt;
+        float n = t * idt;
         return dt * (n * n - n * n * n * (1.0f / 3) - n);
     }
     if (t > 1.0f - dt) {
-        float n = (t - 1.0f) / dt;
+        float n = (t - 1.0f) * idt;
         return -dt * (n * n * n * (1.0f / 3) + n * n + n);
     }
     return 0.0f;
 }
 
-/* this sample's value, the residuals included, then the phase to the next sample: its own
- * jumps (a wrap, a pulse's falling edge) corrected. Returns 1 if it wrapped, *frac the time
- * from the wrap to the next sample (samples) */
-INLINE float osc_run(osc_t *o, uint32_t *rng, int *wrapped, float *frac)
+enum { MASTER, FREE, SYNCED };          /* an oscillator's part in the block */
+
+/* one oscillator over the block, wave w (a constant: each wave its own loop): its samples x
+ * its gain into buf (the master sets it, the others add), its jumps' corrections (x its gain)
+ * into the ring. The master notes its wraps in syn; a synced slave is reset at them */
+INLINE void osc_block(sy_t *k, osc_t *o, int role, int w)
 {
-    float p = o->ph, dt = o->dt;
-    float y = naive(o, p, rng) + o->ring[o->rp];
-    o->ring[o->rp] = 0.0f;
-    o->rp = (o->rp + 1) & (MB_TAPS - 1);
-    if (o->wave == SL_W_TRI) {
-        float q = p - 0.5f;
-        if (q < 0.0f)
-            q += 1.0f;
-        y += -8.0f * blamp(p, dt) + 8.0f * blamp(q, dt);
+    float p = o->ph, dt = o->dt, idt = 1.0f / dt, pw = o->pw, g = o->g, gs = o->g_step;
+    float *buf = k->buf, *syn = k->syn, *ring = k->ring;
+    uint32_t rng = k->rng;
+    for (int i = 0; i < CTL; i++) {
+        g += gs;
+        float y = wave_at(w, p, pw, &rng);
+        if (w == SL_W_TRI) {
+            float q = p - 0.5f;
+            if (q < 0.0f)
+                q += 1.0f;
+            y += 8.0f * (blamp(q, dt, idt) - blamp(p, dt, idt));
+        }
+        if (role == MASTER)
+            buf[i] = y * g;
+        else
+            buf[i] += y * g;
+        if (role == SYNCED && syn[i] >= 0.0f) {
+            /* reset by the master `frac` samples before the next sample */
+            float frac = syn[i], at = p + dt * (1.0f - frac);   /* its phase at the master's wrap */
+            if (at >= 1.0f) {                                   /* its own wrap first */
+                at -= 1.0f;
+                float t = frac + at * idt;
+                t = t > 1.0f ? 1.0f : t;
+                if (w == SL_W_SAW)
+                    blep_add(ring + i + 1, -2.0f * g, t);
+                else if (w == SL_W_RAMP || w == SL_W_PULSE)
+                    blep_add(ring + i + 1, 2.0f * g, t);
+            }
+            if (w != SL_W_NOISE) {
+                float h = wave_at(w, 0.0f, pw, &rng) - wave_at(w, at, pw, &rng);
+                if (h > 1e-4f || h < -1e-4f)
+                    blep_add(ring + i + 1, h * g, frac);
+            }
+            p = frac * dt;
+            continue;
+        }
+        float n = p + dt;
+        if (w == SL_W_PULSE && p < pw && n >= pw)
+            blep_add(ring + i + 1, -2.0f * g, (n - pw) * idt);
+        if (n >= 1.0f) {
+            n -= 1.0f;
+            float frac = n * idt;
+            if (role == MASTER)
+                syn[i] = frac;
+            if (w == SL_W_SAW)
+                blep_add(ring + i + 1, -2.0f * g, frac);
+            else if (w == SL_W_RAMP || w == SL_W_PULSE)
+                blep_add(ring + i + 1, 2.0f * g, frac);
+        } else if (role == MASTER) {
+            syn[i] = -1.0f;
+        }
+        p = n;
     }
-    float n = p + dt;
-    if (o->wave == SL_W_PULSE && p < o->pw && n >= o->pw)
-        blep_add(o, -2.0f, (n - o->pw) / dt);
-    *wrapped = n >= 1.0f;
-    if (*wrapped) {
-        n -= 1.0f;
-        *frac = n / dt;
-        if (o->wave == SL_W_SAW)
-            blep_add(o, -2.0f, *frac);
-        else if (o->wave == SL_W_RAMP || o->wave == SL_W_PULSE)
-            blep_add(o, 2.0f, *frac);
-    }
-    o->ph = n;
-    return y;
+    o->ph = p;
+    o->g = g;
+    k->rng = rng;
 }
 
-/* a silent oscillator: only its phase (a silent master still syncs its slaves); the
- * residuals it had are dropped once */
-static __attribute__((noinline)) void osc_skip(osc_t *o, int *wrapped, float *frac)
+static __attribute__((noinline)) void osc_wave(sy_t *k, osc_t *o, int role)
 {
-    if (!o->idle) {
-        o->idle = 1;
-        for (int t = 0; t < MB_TAPS; t++)
-            o->ring[t] = 0.0f;
+    switch (o->wave) {
+    case SL_W_SINE:  osc_block(k, o, role, SL_W_SINE); break;
+    case SL_W_TRI:   osc_block(k, o, role, SL_W_TRI); break;
+    case SL_W_RAMP:  osc_block(k, o, role, SL_W_RAMP); break;
+    case SL_W_PULSE: osc_block(k, o, role, SL_W_PULSE); break;
+    case SL_W_NOISE: osc_block(k, o, role, SL_W_NOISE); break;
+    default:         osc_block(k, o, role, SL_W_SAW); break;
     }
-    float n = o->ph + o->dt;
-    *wrapped = n >= 1.0f;
-    if (*wrapped) {
-        n -= 1.0f;
-        *frac = n / o->dt;
-    }
-    o->ph = n;
 }
 
-/* a slave reset by its master `frac` samples before the next sample */
-INLINE float slave_sync(osc_t *o, uint32_t *rng, float frac)
+/* a silent oscillator: only its phase (a silent master still syncs its slaves) */
+static __attribute__((noinline)) void osc_idle(sy_t *k, osc_t *o, int role)
 {
-    float p = o->ph, dt = o->dt;
-    float y = naive(o, p, rng) + o->ring[o->rp];
-    o->ring[o->rp] = 0.0f;
-    o->rp = (o->rp + 1) & (MB_TAPS - 1);
-    float at = p + dt * (1.0f - frac);          /* its phase at the master's wrap */
-    if (at >= 1.0f) {                           /* its own wrap first */
-        at -= 1.0f;
-        float t = frac + at / dt;
-        if (o->wave == SL_W_SAW)
-            blep_add(o, -2.0f, t > 1.0f ? 1.0f : t);
-        else if (o->wave == SL_W_RAMP || o->wave == SL_W_PULSE)
-            blep_add(o, 2.0f, t > 1.0f ? 1.0f : t);
+    float p = o->ph, dt = o->dt, idt = 1.0f / dt, *syn = k->syn;
+    for (int i = 0; i < CTL; i++) {
+        if (role == MASTER)
+            k->buf[i] = 0.0f;
+        if (role == SYNCED && syn[i] >= 0.0f) {
+            p = syn[i] * dt;
+            continue;
+        }
+        float n = p + dt;
+        if (n >= 1.0f) {
+            n -= 1.0f;
+            if (role == MASTER)
+                syn[i] = n * idt;
+        } else if (role == MASTER) {
+            syn[i] = -1.0f;
+        }
+        p = n;
     }
-    float h = naive(o, 0.0f, rng) - naive(o, at, rng);
-    if (o->wave != SL_W_NOISE && (h > 1e-4f || h < -1e-4f))
-        blep_add(o, h, frac);
-    o->ph = frac * dt;
-    return y;
+    o->ph = p;
 }
 
-/* MODE's drive: the soft clip, antialiased (the antiderivative's difference over the step;
- * the midpoint when the step is tiny), crossfaded in by drv_w */
-static __attribute__((noinline)) float mode_drive(sy_t *k, float x)
+/* the oscillators' residuals added in, then the fold (2x: the midpoint with the last sample
+ * too, as the iOS synth); the ring moves on a block */
+static __attribute__((noinline)) void mix_fold(sy_t *k)
 {
-    float u = x * k->drv_g + k->drv_b, F = clip3_F(u), du = u - k->drv_x1;
-    float y = (du > 1e-4f || du < -1e-4f ? (F - k->drv_F1) / du : clip3(0.5f * (u + k->drv_x1))) - k->drv_c;
-    k->drv_x1 = u;
-    k->drv_F1 = F;
-    k->drv_in += (x * x - k->drv_in) * DRV_AVG;
-    k->drv_out += (y * y - k->drv_out) * DRV_AVG;
-    return x + k->drv_w * (y * k->drv_m - x);
+    float *buf = k->buf, *ring = k->ring;
+    float f = k->fold, fs = k->fold_step, bias = k->fold_bias, prev = k->prev;
+    if (f > 0.001f || f + fs * CTL > 0.001f) {
+        for (int i = 0; i < CTL; i++) {
+            float x = buf[i] + ring[i] + bias;
+            f += fs;
+            if (f > 0.001f) {
+                float g = (1.0f + f * 9.0f) * 0.25f;
+                float mid = (prev + x) * 0.5f;
+                buf[i] = (sin_t(mid * g) + sin_t(x * g)) * 0.5f;
+            } else {
+                buf[i] = x - bias;
+            }
+            prev = x;
+        }
+    } else {
+        for (int i = 0; i < CTL; i++)
+            buf[i] += ring[i];
+        f += fs * CTL;
+        prev = buf[CTL - 1] + bias;
+    }
+    k->fold = f;
+    k->prev = prev;
+    for (int j = 0; j < MB_TAPS; j++)
+        ring[j] = ring[j + CTL];
+    for (int j = MB_TAPS; j < CTL + MB_TAPS; j++)
+        ring[j] = 0.0f;
 }
 
 /* tanh(x) (Pade, exact at +-3, flat beyond) */
@@ -1027,51 +1097,241 @@ INLINE float tanhf_(float x)
     return x * (27.0f + x2) / (27.0f + 9.0f * x2);
 }
 
-/* the ladder: four one-poles G, the fourth's output fed back (k); its states' sum S, so the loop's
- * input is solved without a delay, u = (x - k S) / (1 + k G^4), then saturated */
-INLINE float ladder(sy_t *k, float x)
+/* the trapezoidal state-variable filter over the block, type t (a constant: each its own loop);
+ * its band state saturates when the resonance is pushed. LP24: a second stage, no resonance;
+ * LP18: the SVF's low pass, then the one-pole */
+INLINE void svf_block(sy_t *k, int t)
 {
-    float *c = k->c, *cs = k->c_step, *s = k->lad;
-    c[C_LG] += cs[C_LG];
-    c[C_LD] += cs[C_LD];
-    c[C_LK] += cs[C_LK];
-    float G = c[C_LG];
-    float S = (1.0f - G) * (((s[0] * G + s[1]) * G + s[2]) * G + s[3]);
-    float u = (x - c[C_LK] * S) * c[C_LD];
-    u = tanhf_(u * LAD_DRIVE) * (1.0f / LAD_DRIVE);
-    for (int i = 0; i < 4; i++) {
-        float v = (u - s[i]) * G;
-        u = v + s[i];
-        s[i] = u + v;
+    float *buf = k->buf, *c = k->c, *cs = k->c_step, ig = k->in_gain;
+    float a1 = c[C_A1], a2 = c[C_A2], a3 = c[C_A3], s1 = cs[C_A1], s2 = cs[C_A2], s3 = cs[C_A3];
+    float q = k->q, qs = k->q_step, low = k->low, band = k->band;
+    float b1 = c[C_B1], b2 = c[C_B2], b3 = c[C_B3], g1 = c[C_G1];
+    float low2 = k->low2, band2 = k->band2, one = k->one;
+    for (int i = 0; i < CTL; i++) {
+        float x = buf[i] * ig, y;
+        a1 += s1;
+        a2 += s2;
+        a3 += s3;
+        q += qs;
+        float v3 = x - low;
+        float v1 = a1 * band + a2 * v3;
+        float v2 = low + a2 * band + a3 * v3;
+        band = soft_knee(2.0f * v1 - band, SAT_KNEE, SAT_CEIL);
+        low = 2.0f * v2 - low;
+        switch (t) {
+        case SL_F_LP12:  y = v2; break;
+        case SL_F_BP:    y = v1; break;
+        case SL_F_HP:    y = x - q * v1 - v2; break;
+        case SL_F_NOTCH: y = x - q * v1; break;
+        case SL_F_LP18: {
+            float u = (v2 - one) * g1;
+            y = u + one;
+            one = y + u;
+            break;
+        }
+        default: {
+            float w3 = v2 - low2;
+            float w1 = b1 * band2 + b2 * w3;
+            float w2 = low2 + b2 * band2 + b3 * w3;
+            band2 = 2.0f * w1 - band2;
+            low2 = 2.0f * w2 - low2;
+            y = w2;
+            break;
+        }
+        }
+        buf[i] = y;
     }
-    return u;
+    c[C_A1] = a1;
+    c[C_A2] = a2;
+    c[C_A3] = a3;
+    k->q = q;
+    k->low = low;
+    k->band = band;
+    k->low2 = low2;
+    k->band2 = band2;
+    k->one = one;
 }
 
-/* the oscillators when some are silent (render's own loop runs all three) */
-static __attribute__((noinline)) float oscillators_some(sy_t *k)
+/* the ladder: four one-poles G, the fourth's output fed back (k); its states' sum S, so the loop's
+ * input is solved without a delay, u = (x - k S) / (1 + k G^4), then saturated */
+static __attribute__((noinline)) void ladder_block(sy_t *k)
 {
-    int wrapped, w2, live = k->live;
-    float frac = 0.0f, f2, mix = 0.0f;
-    osc_t *o = k->o;
-    if (live & 1) {
-        o[0].g += o[0].g_step;
-        mix = osc_run(&o[0], &k->rng, &wrapped, &frac) * o[0].g;
-    } else {
-        osc_skip(&o[0], &wrapped, &frac);
+    float *buf = k->buf, *c = k->c, *cs = k->c_step, ig = k->in_gain;
+    float G = c[C_LG], D = c[C_LD], K = c[C_LK], sg = cs[C_LG], sd = cs[C_LD], sk = cs[C_LK];
+    float s0 = k->lad[0], s1 = k->lad[1], s2 = k->lad[2], s3 = k->lad[3];
+    for (int i = 0; i < CTL; i++) {
+        G += sg;
+        D += sd;
+        K += sk;
+        float S = (1.0f - G) * (((s0 * G + s1) * G + s2) * G + s3);
+        float u = (buf[i] * ig - K * S) * D, v;
+        u = tanhf_(u * LAD_DRIVE) * (1.0f / LAD_DRIVE);
+        v = (u - s0) * G; u = v + s0; s0 = u + v;
+        v = (u - s1) * G; u = v + s1; s1 = u + v;
+        v = (u - s2) * G; u = v + s2; s2 = u + v;
+        v = (u - s3) * G; u = v + s3; s3 = u + v;
+        buf[i] = u;
     }
-    int sync = wrapped;
-    for (int i = 1; i < NOSC; i++) {
-        if (live >> i & 1) {
-            o[i].g += o[i].g_step;
-            float y = sync && k->synced[i] ? slave_sync(&o[i], &k->rng, frac) : osc_run(&o[i], &k->rng, &w2, &f2);
-            mix += y * o[i].g;
-        } else if (sync && k->synced[i]) {
-            o[i].ph = frac * o[i].dt;
-        } else {
-            osc_skip(&o[i], &w2, &f2);
+    c[C_LG] = G;
+    c[C_LD] = D;
+    c[C_LK] = K;
+    k->lad[0] = s0;
+    k->lad[1] = s1;
+    k->lad[2] = s2;
+    k->lad[3] = s3;
+}
+
+static __attribute__((noinline)) void filter_block(sy_t *k)
+{
+    switch (k->ftype) {
+    case SL_F_LP6: {
+        float *buf = k->buf, g1 = k->c[C_G1], ig = k->in_gain, one = k->one;
+        for (int i = 0; i < CTL; i++) {
+            float u = (buf[i] * ig - one) * g1;
+            buf[i] = u + one;
+            one = buf[i] + u;
+        }
+        k->one = one;
+        break;
+    }
+    case SL_F_LADDER: ladder_block(k); break;
+    case SL_F_LP12:   svf_block(k, SL_F_LP12); break;
+    case SL_F_LP18:   svf_block(k, SL_F_LP18); break;
+    case SL_F_BP:     svf_block(k, SL_F_BP); break;
+    case SL_F_HP:     svf_block(k, SL_F_HP); break;
+    case SL_F_NOTCH:  svf_block(k, SL_F_NOTCH); break;
+    default:          svf_block(k, SL_F_LP24); break;
+    }
+}
+
+/* MODE's drive: the soft clip, antialiased (the antiderivative's difference over the step;
+ * the midpoint when the step is tiny), crossfaded in by drv_w; the levels before and after it
+ * (its make-up) follow the block's mean squares */
+static __attribute__((noinline)) void drive_block(sy_t *k)
+{
+    float *buf = k->buf, dg = k->drv_g, db = k->drv_b, dc = k->drv_c, dm = k->drv_m, dw = k->drv_w;
+    float x1 = k->drv_x1, F1 = k->drv_F1, sin_ = 0.0f, sout = 0.0f;
+    for (int i = 0; i < CTL; i++) {
+        float x = buf[i];
+        float u = x * dg + db, F = clip3_F(u), du = u - x1;
+        float y = (du > 1e-4f || du < -1e-4f ? (F - F1) / du : clip3(0.5f * (u + x1))) - dc;
+        x1 = u;
+        F1 = F;
+        sin_ += x * x;
+        sout += y * y;
+        buf[i] = x + dw * (y * dm - x);
+    }
+    k->drv_x1 = x1;
+    k->drv_F1 = F1;
+    k->drv_in += (sin_ * (1.0f / CTL) - k->drv_in) * (DRV_AVG * CTL);
+    k->drv_out += (sout * (1.0f / CTL) - k->drv_out) * (DRV_AVG * CTL);
+}
+
+/* the amp envelope over the block into a (each stage one loop); returns how many samples it
+ * sounds: fewer than CTL when it ends (those after are silent) */
+static __attribute__((noinline)) int env_block(env_t *e, float *a)
+{
+    float l = e->lvl;
+    int i = 0;
+    while (i < CTL) {
+        float m = 1.0f, b = 0.0f, thr = 0.0f, end = 0.0f;
+        int up = 0, next = IDLE;
+        switch (e->stage) {
+        case ATTACK:
+            m = e->exp ? e->a_c : 1.0f;
+            b = e->exp ? 1.0f - e->a_c : e->a_inc;
+            thr = 0.999f, end = 1.0f, up = 1, next = DECAY;
+            break;
+        case DECAY:
+            m = e->exp ? e->d_c : 1.0f;
+            b = e->exp ? e->sus * (1.0f - e->d_c) : -e->d_dec;
+            thr = e->sus + (e->exp ? 0.001f : 0.0f), end = e->sus, next = SUSTAIN;
+            break;
+        case RELEASE:
+            m = e->exp ? e->r_c : 1.0f;
+            b = e->exp ? 0.0f : -e->r_dec;
+            thr = 0.001f;
+            break;
+        case IDLE:
+            e->lvl = l;
+            return i;
+        default:                        /* sustain */
+            for (; i < CTL; i++)
+                a[i] = l;
+            e->lvl = l;
+            return CTL;
+        }
+        for (; i < CTL; i++) {
+            l = l * m + b;
+            if (up ? l >= thr : l <= thr) {
+                l = end;
+                e->stage = next;
+                if (next == IDLE) {
+                    e->lvl = l;
+                    return i;
+                }
+                a[i++] = l;
+                break;
+            }
+            a[i] = l;
         }
     }
-    return mix;
+    e->lvl = l;
+    return CTL;
+}
+
+/* the block: control, the gate, then each stage over CTL samples */
+static __attribute__((noinline)) void block(sy_t *k)
+{
+    control(k);
+    /* the gate: the note's release */
+    if (!k->released && k->gate_samples >= 0 && k->elapsed >= k->gate_samples) {
+        k->released = 1;
+        env_release(&k->aenv);
+        env_release(&k->fenv);
+    }
+    k->elapsed += CTL;
+
+    /* oscillators: the master, then the slaves (those with sync on: reset at its wraps) */
+    osc_t *o = k->o;
+    for (int i = 0; i < NOSC; i++) {
+        int role = i == 0 ? MASTER : (k->synced[i] ? SYNCED : FREE);
+        if (k->live >> i & 1)
+            osc_wave(k, &o[i], role);
+        else
+            osc_idle(k, &o[i], role);
+    }
+    mix_fold(k);
+    if (k->filt_on)
+        filter_block(k);
+    /* MODE: drive, after the filter (the filtered tone gets its harmonics back: an overdriven
+     * filter's growl), before the amp envelope (the same grit at any level of the note) */
+    if (k->drv_w > 0.0005f)
+        drive_block(k);
+
+    /* the amp envelope, the DC blocker (the pulse's and the fold's offsets), the limiter and
+     * the soft clip, the level for DRIVE */
+    float a[CTL], *buf = k->buf;
+    int n = env_block(&k->aenv, a);
+    float vt = k->vel * k->trim, dx = k->dc_x, dy = k->dc_y, lim = k->lim, dg = k->dgain;
+    for (int i = 0; i < n; i++) {
+        float y = buf[i] * a[i] * vt;
+        float d = y - dx + DC_R * dy;
+        dx = y;
+        dy = d;
+        float m = absf(d);
+        lim = m > lim ? lim + (m - lim) * LIM_ATT : lim * LIM_REL;
+        if (lim > LIM_THR)
+            d *= LIM_THR / lim;
+        d = soft_knee(d, CLIP_KNEE, CLIP_CEIL);
+        buf[i] = d * dg;            /* within +-14,200: the clip's ceiling, DRIVE's +3 dB */
+    }
+    for (int i = n; i < CTL; i++)
+        buf[i] = 0.0f;
+    k->dc_x = dx;
+    k->dc_y = dy;
+    k->lim = lim;
+    k->stop = n < CTL;
 }
 
 static int16_t render(cVoice *v)
@@ -1080,116 +1340,15 @@ static int16_t render(cVoice *v)
     fw_tick_mute_fade(v);
     if (k->magic != MAGIC || !k->sounding)
         return 0;
-    if (--k->ctl < 0) {
-        k->ctl = CTL - 1;
-        control(k);
-    }
-    /* the gate: the note's release */
-    if (!k->released && k->gate_samples >= 0 && k->elapsed >= k->gate_samples) {
-        k->released = 1;
-        env_release(&k->aenv);
-        env_release(&k->fenv);
-    }
-    k->elapsed++;
-
-    /* oscillators: the master, then the slaves (those with sync on: reset at its wrap) */
-    float mix;
-    if (__builtin_expect(k->live == (1 << NOSC) - 1, 1)) {
-        int wrapped, w2;
-        float frac = 0.0f, f2;
-        osc_t *o = k->o;
-        o[0].g += o[0].g_step;
-        mix = osc_run(&o[0], &k->rng, &wrapped, &frac) * o[0].g;
-        int sync = wrapped;
-        for (int i = 1; i < NOSC; i++) {
-            o[i].g += o[i].g_step;
-            float y = sync && k->synced[i] ? slave_sync(&o[i], &k->rng, frac) : osc_run(&o[i], &k->rng, &w2, &f2);
-            mix += y * o[i].g;
+    if (k->bi >= CTL) {
+        if (k->stop) {
+            k->sounding = 0;
+            return 0;
         }
-    } else {
-        mix = oscillators_some(k);
+        block(k);
+        k->bi = 0;
     }
-
-    /* fold (2x: the midpoint with the last sample too, as the iOS synth) */
-    k->fold += k->fold_step;
-    if (k->fold > 0.001f) {
-        float x = mix + k->fold_bias;
-        float g = (1.0f + k->fold * 9.0f) * 0.25f;
-        float mid = (k->prev + x) * 0.5f;
-        k->prev = x;
-        mix = (sin2pi(mid * g) + sin2pi(x * g)) * 0.5f;
-    } else {
-        k->prev = mix + k->fold_bias;
-    }
-
-    /* filter: the trapezoidal state-variable filter (stable however it's swept); its band
-     * state saturates when the resonance is pushed */
-    if (k->filt_on) {
-        float *c = k->c, *cs = k->c_step;
-        float x = mix * k->in_gain;
-        if (k->ftype == SL_F_LP6) {
-            float u = (x - k->one) * c[C_G1];
-            mix = u + k->one;
-            k->one = mix + u;
-        } else if (k->ftype == SL_F_LADDER) {
-            mix = ladder(k, x);
-        } else {
-            c[C_A1] += cs[C_A1];
-            c[C_A2] += cs[C_A2];
-            c[C_A3] += cs[C_A3];
-            k->q += k->q_step;
-            float v3 = x - k->low;
-            float v1 = c[C_A1] * k->band + c[C_A2] * v3;
-            float v2 = k->low + c[C_A2] * k->band + c[C_A3] * v3;
-            k->band = soft_knee(2.0f * v1 - k->band, SAT_KNEE, SAT_CEIL);
-            k->low = 2.0f * v2 - k->low;
-            switch (k->ftype) {
-            case SL_F_LP12: mix = v2; break;
-            case SL_F_BP:   mix = v1; break;
-            case SL_F_HP:   mix = x - k->q * v1 - v2; break;
-            case SL_F_NOTCH: mix = x - k->q * v1; break;
-            case SL_F_LP18: {
-                float u = (v2 - k->one) * c[C_G1];
-                mix = u + k->one;
-                k->one = mix + u;
-                break;
-            }
-            default: {                  /* LP24: a second stage, without resonance */
-                float w3 = v2 - k->low2;
-                float w1 = c[C_B1] * k->band2 + c[C_B2] * w3;
-                float w2 = k->low2 + c[C_B2] * k->band2 + c[C_B3] * w3;
-                k->band2 = 2.0f * w1 - k->band2;
-                k->low2 = 2.0f * w2 - k->low2;
-                mix = w2;
-                break;
-            }
-            }
-        }
-    }
-
-    /* MODE: drive, after the filter (the filtered tone gets its harmonics back: an overdriven
-     * filter's growl), before the amp envelope (the same grit at any level of the note) */
-    if (k->drv_w > 0.0005f)
-        mix = mode_drive(k, mix);
-
-    float a = env_step(&k->aenv);
-    if (k->aenv.stage == IDLE) {
-        k->sounding = 0;
-        return 0;
-    }
-    float y = mix * a * k->vel * k->trim;
-    /* DC blocker (the pulse's and the fold's offsets), the limiter and the soft clip, the level
-     * for DRIVE */
-    float d = y - k->dc_x + DC_R * k->dc_y;
-    k->dc_x = y;
-    k->dc_y = d;
-    float m = absf(d);
-    k->lim = m > k->lim ? k->lim + (m - k->lim) * LIM_ATT : k->lim * LIM_REL;
-    if (k->lim > LIM_THR)
-        d *= LIM_THR / k->lim;
-    d = soft_knee(d, CLIP_KNEE, CLIP_CEIL);
-    d = clampf(d * k->dgain, -32767.0f, 32767.0f);
-    return (int16_t)(((int32_t)d * k->gain) >> 16);
+    return (int16_t)(((int32_t)k->buf[k->bi++] * k->gain) >> 16);
 }
 
 /* ---- vtable and construction --------------------------------------------------------- */
