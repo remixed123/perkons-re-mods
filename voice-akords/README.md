@@ -3,8 +3,8 @@
 **AKORDS** is a chord synth voice for the Pērkons, on any of its four voices. Every note plays a
 chord in your scale. The name is Latvian for "chord".
 
-* **Chords from one note**: 3 or 4 notes in your scale, from triads to 7ths, 9ths, quartal and
-  power chords.
+* **Chords from one note**: three notes, from triads and rootless 9ths in your scale to minor 7
+  shells, minor stabs and power chords.
 * **Smooth chords** take the inversion nearest the chord before, so a sequence moves like a
   player's hands instead of jumping as a block.
 * **Chord progressions** move the chord on once every cycle of the track: trance, epic,
@@ -101,28 +101,31 @@ Glide slides each note of a new chord from the matching note of the chord before
 
 ### Chord types (row 2, steps 1-10)
 
-Each type comes plain and **smooth**.
+All types come plain and **smooth**.
 
-| step | chord | notes |
-|---|---|---|
-| 1 | **Diatonic** | the triad the scale gives on that note: in C major, C, Dm, Em, F, G, Am, B° |
-| 2 | Diatonic, smooth | |
-| 3 | **Diatonic 7th** | the same with its 7th (4 notes): Cmaj7, Dm7, Em7, Fmaj7, G7, Am7, Bm7♭5 |
-| 4 | Diatonic 7th, smooth | |
-| 5 | **Diatonic 9th** | the 7th chord with its 9th, without the 5th (4 notes: root, 3, 7, 9): Cmaj9, Dm9, G9 ... |
-| 6 | Diatonic 9th, smooth | |
-| 7 | **Quartal** | four notes in fourths (root, 4, ♭7, ♭10): the dub techno stab |
-| 8 | Quartal, smooth | |
-| 9 | **Power** | root, 5, octave: for bass and Reese |
-| 10 | Power, smooth | |
+| step | chord | notes | what it plays |
+|---|---|---|---|
+| 1 | **Diatonic** | 3 | the triad the scale gives on that note: in C major, C, Dm, Em, F, G, Am, B° |
+| 2 | Diatonic, smooth | 3 | |
+| 3 | **Minor 7 shell** | 3 | root, ♭3, ♭7: the dub techno and deep house stab, a minor 7th without its 5th |
+| 4 | Minor 7 shell, smooth | 3 | |
+| 5 | **Minor + octave** | 3 | root, ♭3, octave: the rave stab |
+| 6 | Minor + octave, smooth | 3 | |
+| 7 | **Power** | 3 | root, 5, octave: for bass and Reese |
+| 8 | Power, smooth | 3 | |
+| 9 | **Rootless 9th** | 3 | the scale's 9th chord with only its 3, 7 and 9 (no root, no 5th): the deep house organ and Rhodes voicing. In C major on C: E B D. Floats above a bass line that plays the root |
+| 10 | Rootless 9th, smooth | 3 | |
 
 * **Plain types play in root position**: the chord moves up and down as a block.
 * **Smooth types** take the inversion nearest the chord before (C to F plays C F A, not
   F A C), staying within about an octave of TUNE. After a silence they start again in root
-  position.
+  position. Power and Minor + octave keep their doubled note: they move between root position
+  and the inversion that doubles their middle note (G D G, E♭ C E♭).
+* **Minor 7 shell, Minor + octave and Power keep their shape** on every note, whatever the
+  scale: a progression moves them as parallel chords, the dub techno way.
 * On pentatonic and blues scales, the diatonic types take the nearest notes the scale has, and
-  a sus chord where it has no third. On Chromatic, Diatonic plays major chords, Diatonic 7th
-  minor 7ths and Diatonic 9th minor 9ths.
+  a sus chord where it has no third. On Chromatic, Diatonic plays major chords and Rootless 9th
+  minor 9ths.
 
 ### Progressions (row 2, steps 11-16)
 
@@ -227,7 +230,7 @@ until you save it again.
 A held chord can crackle when it is loud, most often on thick presets such as Hollow, Reese
 and Pad.
 
-**Why it happens.** A chord plays up to four notes at once, each with two oscillators, so a
+**Why it happens.** A chord plays three notes at once, each with two oscillators, so a
 held chord is a dense sound that stays at full level for as long as it holds. A held chord
 keeps pushing the same level through the rest of the Pērkons: the voice's analog stage, the
 master compressor and the outputs. When that level is high, the compressor and the analog

@@ -18,7 +18,7 @@ def brightness(seg):
 class TestAkordsSettings(AkordsCase):
     # -- the settings message -------------------------------------------------------------
     def test_the_message_sets_preset_chord_scale_root(self):
-        for preset, chord, scale, root in ((3, 'quartal', 4, 7), (10, 'power', 10, 11), (0, 'dia', 0, 0)):
+        for preset, chord, scale, root in ((3, 'm7shell', 4, 7), (10, 'power', 10, 11), (0, 'dia', 0, 0)):
             with self.subTest(preset=preset, chord=chord, scale=scale, root=root):
                 e = self.machine(preset=preset, chord=chord, scale=scale, root=root)
                 self.assertEqual(self.info(e)['set'], [preset, CHORDS.index(chord), scale, ROOTS.index(root)])
@@ -37,11 +37,11 @@ class TestAkordsSettings(AkordsCase):
 
     def test_settings_survive_rebuilding_the_engine(self):
         """voice-map rebuilds an engine when a voice comes back to it: the settings stay."""
-        e = self.machine(preset=6, chord='dia9_s', scale=2, root=4)
+        e = self.machine(preset=6, chord='moct_s', scale=2, root=4)
         remap(e, [0, 1, 2, 3], self.cave, MSG_VOICE_MAP)
         remap(e, [4, 1, 2, 3], self.cave, MSG_VOICE_MAP)
         self.state(e, e.knobs, *e.sw)
-        self.assertEqual(self.info(e)['set'], [6, CHORDS.index('dia9_s'), 2, ROOTS.index(4)])
+        self.assertEqual(self.info(e)['set'], [6, CHORDS.index('moct_s'), 2, ROOTS.index(4)])
 
     # -- MODE: the filter -----------------------------------------------------------------
     def test_the_preset_keeps_its_own_filter_until_mode_moves(self):

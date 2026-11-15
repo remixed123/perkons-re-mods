@@ -110,7 +110,7 @@ static const float CH_WET[4] = {0.0f, 0.35f, 0.5f, 0.6f};
 #define SETTLE_SAMPLES  960         /* 20 ms: later, a new TUNE step must hold this long */
 #define STEAL_SAMPLES   96          /* 2 ms fade of a slot a new chord takes */
 #define NSLOT           1           /* one chord: a new one takes over after a short fade */
-#define NNOTE           4           /* notes in a chord, at most (unused: -1) */
+#define NNOTE           3           /* notes in a chord (unused: -1) */
 #define DRIFT_CENTS     3.0f        /* each chord note's own detune: up to this either way */
 /* The level follows the voice's DRIVE (an analog stage after the voice): louder with little
  * or no DRIVE, to sit with the voices that use it, quieter at full DRIVE, so the drive
@@ -127,8 +127,9 @@ enum { F_LP24, F_HP12, F_FORMANT };
 enum { IDLE, ATTACK, DECAY, SUSTAIN, RELEASE };
 /* the values the PLAY knobs set */
 enum { V_CUTOFF, V_RES, V_ENV, V_ATTACK, NVAL };
-enum { CH_DIA, CH_DIA_S, CH_DIA7, CH_DIA7_S, CH_DIA9, CH_DIA9_S, CH_QUARTAL, CH_QUARTAL_S,
-       CH_POWER, CH_POWER_S, NCHORD };
+/* the chord types, plain then smooth (odd); all of 3 notes */
+enum { CH_DIA, CH_DIA_S, CH_M7SHELL, CH_M7SHELL_S, CH_MOCT, CH_MOCT_S, CH_POWER, CH_POWER_S,
+       CH_RL9, CH_RL9_S, NCHORD };
 
 /* the settings page's positions (steps 1-16) */
 #define NPRESET AK_NPRESET
@@ -231,13 +232,12 @@ static const struct { const int8_t *n; uint8_t len; } SCALES[NSCALE] = {
 
 /* the roots (semitones above C) of the 11 positions: all but D# / Eb */
 
-/* the fixed chord shapes (semitones above the chord's root) */
-/* fixed shapes: the note count, then the intervals */
-static const int8_t SHAPE_M7[] = {4, 0, 3, 7, 10};
-static const int8_t SHAPE_QUARTAL[] = {4, 0, 5, 10, 15};
+/* fixed shapes (semitones above the chord's root): the note count, then the intervals */
+static const int8_t SHAPE_RL9[] = {3, 3, 10, 14};          /* Rootless 9th on Chromatic: b3 b7 9 */
+static const int8_t SHAPE_M7SHELL[] = {3, 0, 3, 10};        /* Minor 7 shell: 1 b3 b7 */
+static const int8_t SHAPE_MOCT[] = {3, 0, 3, 12};           /* Minor + octave: 1 b3 8 */
 static const int8_t SHAPE_POWER[] = {3, 0, 7, 12};
-static const int8_t SHAPE_MAJOR[] = {3, 0, 4, 7};          /* Diatonic on Chromatic */
-static const int8_t SHAPE_M9[] = {4, 0, 3, 10, 14};        /* Diatonic 9th on Chromatic (no 5th) */
+static const int8_t SHAPE_MAJOR[] = {3, 0, 4, 7};           /* Diatonic on Chromatic */
 
 /* ---- the object ------------------------------------------------------------------------ */
 
@@ -263,6 +263,7 @@ typedef struct {
 typedef struct {
     int32_t stage;                      /* +0: the amp envelope's stage (IDLE: free) */
     int8_t note[NNOTE];                 /* +4: MIDI notes, low to high (unused: -1) */
+    int8_t note_pad[4 - NNOTE];         /* (-1) */
     uint8_t preset;                     /* +8 */
     uint8_t count;                      /* +9: notes */
     uint8_t pad_s[2];
@@ -325,6 +326,7 @@ typedef struct {
     /* ---- ours ---- */
     uint8_t set[4];                     /* +0xc0 preset, chord, scale, root (indices) */
     int8_t last[NNOTE];                 /* +0xc4 the last chord played, low to high, unused -1 */
+    int8_t last_pad[4 - NNOTE];         /* (-1) */
     uint8_t have_last;                  /* +0xc8 */
     uint8_t pad2[3];
     uint32_t slot_size;                 /* +0xcc sizeof(slot_t), for tools */
@@ -774,11 +776,9 @@ static int pick(int scale, int r, const int8_t *cand, int n)
 }
 
 /* intervals of the in-key chord on the scale's degree `deg` (r: its semitones from the
- * root). 7-note scales stack the scale's own thirds; the others take the nearest third
- * (a sus 4th / 2nd if the scale has none), fifth or seventh the scale has. */
-/* the chord the scale gives on degree `deg` (root r): 3 notes (triad), 4 (7th) or 5 (9th: its
- * 5th is then left out, make_chord);
- * the 7-note scales stack their own thirds, the others take the nearest the scale has */
+ * root): 3 notes (triad) or 5 (9th chord). 7-note scales stack the scale's own thirds; the
+ * others take the nearest third (a sus 4th / 2nd if the scale has none), fifth, seventh or
+ * ninth the scale has. */
 static void diatonic(int scale, int deg, int r, int cnt, int8_t *iv)
 {
     static const int8_t THIRD[] = {4, 3, 5, 2}, FIFTH[] = {7, 6, 8, 12}, SEVENTH[] = {10, 11, 9, 12},
@@ -861,18 +861,21 @@ static int any_sounding(const ak_t *a)
     return a->pending >= 0;
 }
 
-/* smooth Power: root position (1 5 8) or the fifth below (5 1 5), an octave up or down,
- * whichever is nearest the chord before (inverting would double the octave) */
-static void nearest_power(const int8_t *last, int *n, int cnt)
+/* the smooth form of the shapes that double their root an octave up (Power 1 5 8, Minor +
+ * octave 1 b3 8): root position or the inversion that doubles the middle note (5 1 5 / b3 8 b10;
+ * inverting as `nearest` does would double the octave), an octave up or down, whichever is
+ * nearest the chord before */
+static const int8_t DOUBLED_POWER[2][3] = {{0, 7, 12}, {-5, 0, 7}};
+static const int8_t DOUBLED_MOCT[2][3] = {{0, 3, 12}, {3, 12, 15}};
+
+static void nearest_doubled(const int8_t *last, int *n, const int8_t (*shape)[3])
 {
-    int r = n[0], best[NNOTE] = {n[0], n[1], n[2]}, bd = 1 << 30;
-    static const int8_t SHAPE[2][3] = {{0, 7, 12}, {-5, 0, 7}};
-    (void)cnt;
+    int r = n[0], best[3] = {n[0], n[1], n[2]}, bd = 1 << 30;
     for (int sh = 0; sh < 2; sh++)
         for (int oct = -12; oct <= 0; oct += 12) {
-            int c[NNOTE];
+            int c[3];
             for (int i = 0; i < 3; i++)
-                c[i] = r + SHAPE[sh][i] + oct;
+                c[i] = r + shape[sh][i] + oct;
             int d = voicing_distance(c, 3, last);
             if (d < bd) {
                 bd = d;
@@ -904,25 +907,25 @@ static void make_chord(ak_t *a, chord_t *c, const int8_t *ref, int has_ref)
     int type = a->set[1], cnt = 3;
     switch (type) {
     case CH_DIA: case CH_DIA_S:
-    case CH_DIA7: case CH_DIA7_S:
-        cnt = type >= CH_DIA7 ? 4 : 3;
         if (scale == SCALE_CHROMATIC)
-            shape = cnt == 4 ? SHAPE_M7 : SHAPE_MAJOR;
+            shape = SHAPE_MAJOR;
         else
-            diatonic(scale, step, r, cnt, iv);
+            diatonic(scale, step, r, 3, iv);
         break;
-    case CH_DIA9: case CH_DIA9_S:       /* 1 3 7 9: the 5th left out (four notes at most) */
+    case CH_RL9: case CH_RL9_S:         /* the scale's 9th chord without its root and 5th: 3 7 9 */
         if (scale == SCALE_CHROMATIC) {
-            shape = SHAPE_M9;
+            shape = SHAPE_RL9;
         } else {
             int8_t t[5];
             diatonic(scale, step, r, 5, t);
-            iv[0] = t[0], iv[1] = t[1], iv[2] = t[3], iv[3] = t[4];
-            cnt = 4;
+            iv[0] = t[1], iv[1] = t[3], iv[2] = t[4];
         }
         break;
-    case CH_QUARTAL: case CH_QUARTAL_S:
-        shape = SHAPE_QUARTAL;
+    case CH_M7SHELL: case CH_M7SHELL_S:
+        shape = SHAPE_M7SHELL;
+        break;
+    case CH_MOCT: case CH_MOCT_S:
+        shape = SHAPE_MOCT;
         break;
     default:
         shape = SHAPE_POWER;
@@ -940,8 +943,12 @@ static void make_chord(ak_t *a, chord_t *c, const int8_t *ref, int has_ref)
     for (int i = 0; i < cnt; i++)
         n[i] = root + iv[i];
     sort_notes(n, cnt);
-    if ((type & 1) && has_ref)          /* the "smooth" types (odd positions) */
-        (type == CH_POWER_S ? nearest_power : nearest)(ref, n, cnt);
+    if ((type & 1) && has_ref) {        /* the "smooth" types (odd positions) */
+        if (type == CH_POWER_S || type == CH_MOCT_S)
+            nearest_doubled(ref, n, type == CH_POWER_S ? DOUBLED_POWER : DOUBLED_MOCT);
+        else
+            nearest(ref, n, cnt);
+    }
     sort_notes(n, cnt);
     for (int i = 0; i < NNOTE; i++)
         c->core[i] = i < cnt ? (int8_t)clampf((float)n[i], 0.0f, 127.0f) : -1;
@@ -1073,7 +1080,8 @@ static float rnd_phase(ak_t *a)
 /* the level for a chord of cnt notes: about the same loudness as 3 */
 static float count_norm(int cnt)
 {
-    return cnt >= 4 ? 0.8660f : 1.0f;   /* sqrt(3 / cnt) */
+    (void)cnt;
+    return 1.0f;                        /* every chord has 3 notes now (was sqrt(3 / cnt)) */
 }
 
 /* a random number 0 .. n - 1 (the notes' detune generator) */
@@ -1168,8 +1176,8 @@ static void start_slot(ak_t *a, slot_t *s, const chord_t *c)
     int glide = pr->glide > 0.0f && c->has_from;
     for (int i = 0; i < NNOTE; i++)
         s->drift[i] = note_drift(a);
-    note_drift(a);                      /* a fifth draw, as when a chord had up to five notes: the
-                                           chords' detunes and start phases stay as they were */
+    for (int i = NNOTE; i < 5; i++)     /* five draws, as when a chord had up to five notes: the */
+        note_drift(a);                  /* chords' detunes and start phases stay as they were */
     for (int i = 0; i < c->count; i++)
         for (int k = 0; k < 2; k++) {
             float ratio = osc_ratio(pr, k) * s->drift[i];

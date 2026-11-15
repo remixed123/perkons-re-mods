@@ -277,12 +277,12 @@ class TestVoiceSound(AkordsCase):
         self.assertGreater(goertzel(x_saw[4800:], hz), 20 * goertzel(x_organ[4800:], hz))
 
     def test_spread_and_bass_drop_move_notes_down(self):
-        base = model_chord(3, chord='dia7')
-        for opts, want in ((S.O_SPREAD, base[:2] + [base[2] - 12] + base[3:]),
+        base = model_chord(3, chord='rl9')
+        for opts, want in ((S.O_SPREAD, [base[0], base[1] - 12, base[2]]),
                            (S.O_DROP, [base[0] - 12] + base[1:]),
-                           (S.O_SPREAD | S.O_DROP, [base[0] - 12, base[1], base[2] - 12, base[3]])):
+                           (S.O_SPREAD | S.O_DROP, [base[0] - 12, base[1] - 12, base[2]])):
             with self.subTest(opts=opts):
-                e = self.machine(chord='dia7')
+                e = self.machine(chord='rl9')
                 self.voice(e, S.PRESET_FIELDS[8], opts)
                 self.play(e, tune_for(3, MAJOR), n=64)
                 self.assertEqual(self.info(e)['last'], sorted(want))
@@ -373,12 +373,12 @@ class TestVoiceSound(AkordsCase):
         self.assertGreater(max(steps) - min(steps), 16, ('clearly heard', steps))
 
     def test_strum_stays_within_the_cpu_budget(self):
-        """While the notes start (a 4-note chord), against a stock voice."""
+        """While the notes start, against a stock voice."""
         from perkons import verify
         from ak_rig import POS1, POS2, PLAY
         worst = {}
         for opts in (0, S.O_STRUM_UP, S.O_STRUM_UP | S.O_MUTATE | S.O_SPREAD | S.O_DROP):
-            e = self.machine(preset=4, chord='dia9')            # Pluck: saws, 4 notes
+            e = self.machine(preset=4, chord='rl9')             # Pluck: saws
             self.voice(e, S.PRESET_FIELDS[4], opts)
             self.play(e, tune_for(0, MAJOR), n=960)
             self.play(e, tune_for(3, MAJOR), n=0)

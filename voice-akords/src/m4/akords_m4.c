@@ -437,9 +437,10 @@ uint32_t pk_ak_kit_save(int bank, int kit, uint8_t *buf, uint32_t max)
     return max >= n && any ? n : 0;
 }
 
-/* the 14 chord types of a 4 x 4 record: Minor 7 and Sus2 (plain, smooth) are gone; they
- * play Diatonic 7th and Diatonic */
-static const uint8_t OLD_CHORD[14] = {0, 1, 2, 3, 4, 5, 2, 3, 0, 1, 6, 7, 8, 9};
+/* the 14 chord types of a 4 x 4 record (Diatonic, Diatonic 7th, Diatonic 9th, Minor 7, Sus2,
+ * Quartal, Power; plain, smooth) as today's: Diatonic 7th and 9th play the Rootless 9th,
+ * Minor 7 and Quartal the Minor 7 shell, Sus2 Diatonic */
+static const uint8_t OLD_CHORD[14] = {0, 1, 8, 9, 8, 9, 2, 3, 0, 1, 2, 3, 6, 7};
 
 void pk_ak_kit_restore(int bank, int kit, const uint8_t *rec, uint32_t len)
 {

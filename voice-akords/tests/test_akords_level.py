@@ -51,7 +51,7 @@ class TestAkordsLevel(AkordsCase):
 
     def test_extremes_stay_bounded(self):
         for p in (2, 8, 9, 12):                     # Lead, Organ, Bell, Vox: the loudest at the extremes
-            e = self.machine(preset=p, chord='quartal')
+            e = self.machine(preset=p, chord='rl9')
             x = []
             for mode in (LP24, HP, FORMANT):
                 self.state(e, e.knobs, POS2, mode)
@@ -87,7 +87,7 @@ class TestAkordsLevel(AkordsCase):
     def test_cpu(self):
         worst = 0
         for p, mode in ((1, PLAY), (6, PLAY), (7, PLAY), (10, PLAY), (7, FORMANT)):   # cut: two chords
-            e = self.machine(preset=p, chord='dia9')                                    # 4 notes (the most)
+            e = self.machine(preset=p, chord='rl9')                                     # the highest notes
             if mode != PLAY:
                 self.state(e, e.knobs, POS2, HP)
                 self.state(e, e.knobs, POS2, mode)

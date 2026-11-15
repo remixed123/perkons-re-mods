@@ -274,9 +274,9 @@ class TestSettingsPage(unittest.TestCase):
         r = self.rig(sd={'BANKS/02/KITS/05.KIX': rec, 'BANKS/02/00.PAT': b''})
         r.e.call(r.cave['pk4_store_bank_load'], 2, max_insns=900_000_000)
         r.e.call(r.cave['pk_ak_kit_load'], 5, max_insns=50_000_000)
-        self.assertEqual(self.settings(r), [[[0, 1, 2, 3], [4, 5, 6, 7], [8, 1, 10, 3], [2, 1, 0, 0]]],
-                         'an older record (14 chord types: 9, Sus2 smooth, plays Diatonic smooth); '
-                         'out of range (12): 0')
+        self.assertEqual(self.settings(r), [[[0, 1, 2, 3], [4, 9, 6, 7], [8, 1, 10, 3], [2, 1, 0, 0]]],
+                         'an older record (14 chord types: 5, Diatonic 9th smooth, plays Rootless 9th '
+                         'smooth; 9, Sus2 smooth, plays Diatonic smooth); out of range (12): 0')
 
     def test_a_kit_keeps_the_progressions(self):
         rec = b'PKX1AKRD' + struct.pack('<I', 20) + bytes([1, 2, 3, 4, 5, 0, 9, 0, 0, 6] + [0] * 10)
