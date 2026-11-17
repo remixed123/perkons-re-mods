@@ -1,7 +1,7 @@
 {
  "format": 1,
  "repo": "remixed123/perkons-re-mods",
- "description": "Akords, a chord synth voice, Kick Lab, a kick drum synth voice, Synth Lab, a mono synth voice, and FX Sidechain, kick-style pumping, for the Perkons HD-01",
+ "description": "Akords, a chord synth voice, Kick Lab, a kick drum synth voice, Synth Lab, a mono synth voice, 3 Oh, an acid bass line voice, and FX Sidechain, kick-style pumping, for the Perkons HD-01",
  "mods": [
   {
    "id": "fx-sidechain",
@@ -63,6 +63,69 @@
        "remixed123/perkons-re-mods:fx-sidechain/src/m4/sidechain_m4.c:.bss.sync_down": 1,
        "remixed123/perkons-re-mods:fx-sidechain/src/m4/sidechain_m4.c:.bss.cur": 6,
        "remixed123/perkons-re-mods:fx-sidechain/src/m4/sidechain_m4.c:.bss.kit_tab": 256
+      }
+     },
+     "takeovers": {},
+     "borrows": {}
+    }
+   }
+  },
+  {
+   "id": "voice-3-oh",
+   "dir": "voice-3-oh",
+   "title": "3 OH",
+   "summary": "A CLASSIC ACID BASS LINE VOICE: A DIODE LADDER FILTER, ACCENTS AND SLIDES, FOUR DISTORTIONS, PRESETS AND A LINE GENERATOR THAT WRITES ACID LINES INTO THE SEQUENCER.",
+   "readme": "voice-3-oh/README.md",
+   "patches": [
+    "voice_3_oh"
+   ],
+   "code": "oh",
+   "kind": "voice",
+   "requires": [],
+   "conflicts": [],
+   "target": "1.3.0",
+   "controls": [
+    {
+     "combo": "STEP",
+     "page": "3 OH",
+     "does": "ROW 1 PRESETS; ROW 2 SCALE, OCTAVE; ROW 3 ROOT, DISTORTION TYPE; ROW 4 LINE SETTINGS, NEW LINE, KEEP RHYTHM, VARY, NEW SOUND"
+    },
+    {
+     "combo": "STEP (HOLD 0.5 S)",
+     "page": "3 OH",
+     "does": "ON NEW LINE, KEEP RHYTHM, VARY OR NEW SOUND: UNDOES THE LAST ONE"
+    }
+   ],
+   "memory": {
+    "v1.3.0": {
+     "ram": {
+      "voice": {
+       "remixed123/perkons-re-mods:voice-3-oh/src/m7/three_oh.c:.bss.stashed": 4,
+       "remixed123/perkons-re-mods:voice-3-oh/src/m7/three_oh.c:.bss.stash": 52,
+       "remixed123/perkons-re-mods:voice-3-oh/src/m7/three_oh.c:.bss.drive": 4,
+       "remixed123/perkons-re-mods:voice-3-oh/src/m7/three_oh.c:.bss.bpm": 4
+      },
+      "main": {
+       "remixed123/perkons-re-mods:voice-3-oh/src/m4/three_oh_m4.c:.bss.dirty": 4,
+       "remixed123/perkons-re-mods:voice-3-oh/src/m4/three_oh_m4.c:.bss.act_done": 4,
+       "remixed123/perkons-re-mods:voice-3-oh/src/m4/three_oh_m4.c:.bss.act_at": 4,
+       "remixed123/perkons-re-mods:voice-3-oh/src/m4/three_oh_m4.c:.bss.act_key": 4,
+       "remixed123/perkons-re-mods:voice-3-oh/src/m4/three_oh_m4.c:.bss.live_any": 4,
+       "remixed123/perkons-re-mods:voice-3-oh/src/m4/three_oh_m4.c:.bss.live_at": 4,
+       "remixed123/perkons-re-mods:voice-3-oh/src/m4/three_oh_m4.c:.bss.live_checked": 4,
+       "remixed123/perkons-re-mods:voice-3-oh/src/m4/three_oh_m4.c:.bss.live_sent": 8,
+       "remixed123/perkons-re-mods:voice-3-oh/src/m4/three_oh_m4.c:.bss.holding": 4,
+       "remixed123/perkons-re-mods:voice-3-oh/src/m4/three_oh_m4.c:.bss.hold_matched": 4,
+       "remixed123/perkons-re-mods:voice-3-oh/src/m4/three_oh_m4.c:.bss.hold_from": 4,
+       "remixed123/perkons-re-mods:voice-3-oh/src/m4/three_oh_m4.c:.bss.rng": 4,
+       "remixed123/perkons-re-mods:voice-3-oh/src/m4/three_oh_m4.c:.bss.kit_ok": 8,
+       "remixed123/perkons-re-mods:voice-3-oh/src/m4/three_oh_m4.c:.bss.ready": 4,
+       "remixed123/perkons-re-mods:voice-3-oh/src/m4/three_oh_m4.c:.bss.editing": 4,
+       "remixed123/perkons-re-mods:voice-3-oh/src/m4/three_oh_m4.c:.bss.pending": 4,
+       "remixed123/perkons-re-mods:voice-3-oh/src/m4/three_oh_m4.c:.bss.undo": 68,
+       "remixed123/perkons-re-mods:voice-3-oh/src/m4/three_oh_m4.c:.bss.fol": 24,
+       "remixed123/perkons-re-mods:voice-3-oh/src/m4/three_oh_m4.c:.bss.oh_cur": 44,
+       "remixed123/perkons-re-mods:voice-3-oh/src/m4/three_oh_m4.c:.bss.kit_snd": 2816
       }
      },
      "takeovers": {},
