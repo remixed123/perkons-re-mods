@@ -1,0 +1,26 @@
+{
+  "options": [
+    {
+      "id": "voice-3-oh",
+      "title": "3 OH",
+      "summary": "A CLASSIC ACID BASS LINE VOICE: A DIODE LADDER FILTER, ACCENTS AND SLIDES, FOUR DISTORTIONS, PRESETS AND A LINE GENERATOR THAT WRITES ACID LINES INTO THE SEQUENCER.",
+      "patches": [
+        "voice_3_oh"
+      ],
+      "code": "oh",
+      "kind": "voice",
+      "controls": [
+        {
+          "combo": "STEP",
+          "page": "3 OH",
+          "does": "ROW 1 PRESETS; ROW 2 SCALE, OCTAVE; ROW 3 ROOT, DISTORTION TYPE; ROW 4 LINE SETTINGS, NEW LINE, KEEP RHYTHM, VARY, NEW SOUND"
+        },
+        {
+          "combo": "STEP (HOLD 0.5 S)",
+          "page": "3 OH",
+          "does": "ON NEW LINE, KEEP RHYTHM, VARY OR NEW SOUND: UNDOES THE LAST ONE"
+        }
+      ]
+    }
+  ]
+}
