@@ -17,6 +17,31 @@
    "requires": [],
    "conflicts": [],
    "target": "1.3.0",
+   "controls": [
+    {
+     "combo": "KIT + SYNC (TAP)",
+     "does": "TURNS THE SIDECHAIN ON OR OFF"
+    },
+    {
+     "combo": "KIT + SYNC (HOLD 0.5 S)",
+     "does": "OPENS THE SIDECHAIN PAGE"
+    },
+    {
+     "combo": "STEP",
+     "page": "SIDECHAIN",
+     "does": "ROWS 1-4: DEPTH, ATTACK, HOLD, RELEASE"
+    },
+    {
+     "combo": "TRIGGER",
+     "page": "SIDECHAIN",
+     "does": "CHOOSES THE MASTER VOICE (IT STILL PLAYS)"
+    },
+    {
+     "combo": "SYNC",
+     "page": "SIDECHAIN",
+     "does": "TURNS THE SIDECHAIN ON OR OFF"
+    }
+   ],
    "memory": {
     "v1.3.0": {
      "ram": {
@@ -59,6 +84,18 @@
    "requires": [],
    "conflicts": [],
    "target": "1.3.0",
+   "controls": [
+    {
+     "combo": "STEP",
+     "page": "AKORDS",
+     "does": "ROW 1 PRESETS; ROW 2 CHORD TYPES, PROGRESSIONS; ROW 3 SCALES, CHORD FX; ROW 4 ROOTS, RANDOM"
+    },
+    {
+     "combo": "STEP (HOLD 0.5 S)",
+     "page": "AKORDS",
+     "does": "ON A RANDOM STEP: UNDOES THE LAST RANDOM"
+    }
+   ],
    "memory": {
     "v1.3.0": {
      "ram": {
@@ -119,6 +156,13 @@
    "requires": [],
    "conflicts": [],
    "target": "1.3.0",
+   "controls": [
+    {
+     "combo": "STEP",
+     "page": "KICK LAB",
+     "does": "ROW 1 PRESETS; ROWS 2-3 DELAY; ROW 4 DRIVE"
+    }
+   ],
    "memory": {
     "v1.3.0": {
      "ram": {
@@ -161,6 +205,38 @@
    "requires": [],
    "conflicts": [],
    "target": "1.3.0",
+   "controls": [
+    {
+     "combo": "STEP",
+     "page": "SYNTH LAB",
+     "does": "ROW 1 PRESETS; ROW 2 CELLS; ROW 3 SCALE, FILTER, FOLD, TWEAK, MUTATE; ROW 4 ROOTS, RANDOM"
+    },
+    {
+     "combo": "STEP (HOLD 0.5 S)",
+     "page": "SYNTH LAB",
+     "does": "ON A PRESET PAIR: ITS STARTER; ON TWEAK OR RANDOM: UNDO"
+    },
+    {
+     "combo": "STEP + LFO RATE",
+     "page": "SYNTH LAB",
+     "does": "ON A CELL: SETS ITS FIRST VALUE"
+    },
+    {
+     "combo": "STEP + LFO WAVE",
+     "page": "SYNTH LAB",
+     "does": "ON A CELL: SETS ITS SECOND VALUE"
+    },
+    {
+     "combo": "STEP + MOD LVL",
+     "page": "SYNTH LAB",
+     "does": "ON A CELL: SETS ITS THIRD VALUE"
+    },
+    {
+     "combo": "STEP + SYNC",
+     "page": "SYNTH LAB",
+     "does": "ON A CELL: SWITCHES ITS FOURTH VALUE"
+    }
+   ],
    "memory": {
     "v1.3.0": {
      "ram": {

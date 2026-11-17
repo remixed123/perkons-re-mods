@@ -8,7 +8,14 @@
         "voice_kick_lab"
       ],
       "code": "kl",
-      "kind": "voice"
+      "kind": "voice",
+      "controls": [
+        {
+          "combo": "STEP",
+          "page": "KICK LAB",
+          "does": "ROW 1 PRESETS; ROWS 2-3 DELAY; ROW 4 DRIVE"
+        }
+      ]
     }
   ]
 }

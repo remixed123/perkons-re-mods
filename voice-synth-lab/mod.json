@@ -8,7 +8,39 @@
         "voice_synth_lab"
       ],
       "code": "sy",
-      "kind": "voice"
+      "kind": "voice",
+      "controls": [
+        {
+          "combo": "STEP",
+          "page": "SYNTH LAB",
+          "does": "ROW 1 PRESETS; ROW 2 CELLS; ROW 3 SCALE, FILTER, FOLD, TWEAK, MUTATE; ROW 4 ROOTS, RANDOM"
+        },
+        {
+          "combo": "STEP (HOLD 0.5 S)",
+          "page": "SYNTH LAB",
+          "does": "ON A PRESET PAIR: ITS STARTER; ON TWEAK OR RANDOM: UNDO"
+        },
+        {
+          "combo": "STEP + LFO RATE",
+          "page": "SYNTH LAB",
+          "does": "ON A CELL: SETS ITS FIRST VALUE"
+        },
+        {
+          "combo": "STEP + LFO WAVE",
+          "page": "SYNTH LAB",
+          "does": "ON A CELL: SETS ITS SECOND VALUE"
+        },
+        {
+          "combo": "STEP + MOD LVL",
+          "page": "SYNTH LAB",
+          "does": "ON A CELL: SETS ITS THIRD VALUE"
+        },
+        {
+          "combo": "STEP + SYNC",
+          "page": "SYNTH LAB",
+          "does": "ON A CELL: SWITCHES ITS FOURTH VALUE"
+        }
+      ]
     }
   ]
 }

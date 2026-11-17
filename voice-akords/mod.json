@@ -8,7 +8,19 @@
         "voice_akords"
       ],
       "code": "ak",
-      "kind": "voice"
+      "kind": "voice",
+      "controls": [
+        {
+          "combo": "STEP",
+          "page": "AKORDS",
+          "does": "ROW 1 PRESETS; ROW 2 CHORD TYPES, PROGRESSIONS; ROW 3 SCALES, CHORD FX; ROW 4 ROOTS, RANDOM"
+        },
+        {
+          "combo": "STEP (HOLD 0.5 S)",
+          "page": "AKORDS",
+          "does": "ON A RANDOM STEP: UNDOES THE LAST RANDOM"
+        }
+      ]
     }
   ]
 }

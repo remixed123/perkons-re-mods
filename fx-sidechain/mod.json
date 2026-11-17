@@ -7,7 +7,32 @@
       "patches": [
         "fx_sidechain"
       ],
-      "code": "sc"
+      "code": "sc",
+      "controls": [
+        {
+          "combo": "KIT + SYNC (TAP)",
+          "does": "TURNS THE SIDECHAIN ON OR OFF"
+        },
+        {
+          "combo": "KIT + SYNC (HOLD 0.5 S)",
+          "does": "OPENS THE SIDECHAIN PAGE"
+        },
+        {
+          "combo": "STEP",
+          "page": "SIDECHAIN",
+          "does": "ROWS 1-4: DEPTH, ATTACK, HOLD, RELEASE"
+        },
+        {
+          "combo": "TRIGGER",
+          "page": "SIDECHAIN",
+          "does": "CHOOSES THE MASTER VOICE (IT STILL PLAYS)"
+        },
+        {
+          "combo": "SYNC",
+          "page": "SIDECHAIN",
+          "does": "TURNS THE SIDECHAIN ON OR OFF"
+        }
+      ]
     }
   ]
 }
