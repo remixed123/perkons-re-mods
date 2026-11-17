@@ -67,15 +67,6 @@ class TestPatternBpm(unittest.TestCase):
         self.assertEqual(r.tempo(), 123.4)
         self.assertEqual(r.e.r8(TEMPO + CATCH), 1, 'the knob catches it, as after the tempo page')
 
-    def test_with_eight_lanes(self):
-        r = Rig(extra=('eight_lanes',))
-        r.tempo(123.4)
-        r.save(3)
-        r.tempo(90.0)
-        r.switch(3)
-        self.assertEqual(r.tempo(), 123.4)
-        self.assertIn(b'BPM1', r.e.sd_written['banks/00/03.pax'])
-
     def test_pattern_without_a_tempo_leaves_it(self):
         r = Rig()
         r.tempo(90.0)

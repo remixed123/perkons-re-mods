@@ -32,7 +32,6 @@ extern uint8_t pk_ss_kit_sample[64][TRACKS];
 extern uint8_t pk_ss_step_sample[64][TRACKS][STEPS];
 int pk_ss_pattern(void);
 int pk_ss_track_sample(int v);
-extern uint8_t pk_el_page __attribute__((weak));    /* eight-lanes: 1 = the main page shows lanes 5-8 */
 
 static uint32_t held_mask[2];               /* the steps held when the page opened (key ids) */
 static uint8_t sounding;                    /* the voice auditioning a sample, + 1 (0: none) */
@@ -43,18 +42,13 @@ static int ours(int track)
     return track >= 0 && track < TRACKS && pk_vm_engine(track) == PK_SS_ENGINE;
 }
 
-static int lanes_page(void)
-{
-    return &pk_el_page && pk_el_page;
-}
-
 /* the held steps on STEP SAMPLER tracks, as key ids into mask[2]; their count */
 static int held_ours(uint32_t mask[2])
 {
     uint8_t it[8];
     int n = 0;
     mask[0] = mask[1] = 0;
-    if (lanes_page() || !fw_steps_held())
+    if (!fw_steps_held())
         return 0;
     fw_held_first(it);
     for (uint32_t x; (x = fw_held_next(it)) != NONE;) {
@@ -98,7 +92,7 @@ int pk_ss_key_event(const uint8_t *evt)
             fw_set_mode(PK_PAGE_SAMPLES);
             return 1;
         }
-        if (key < 64 && fw_key_held(FW_KEY_CLEAR) && !lanes_page() && ours(key / STEPS)) {
+        if (key < 64 && fw_key_held(FW_KEY_CLEAR) && ours(key / STEPS)) {
             uint8_t *c = step_choice(key);              /* CLEAR + step: the step's sample too */
             if (c)
                 *c = 0;

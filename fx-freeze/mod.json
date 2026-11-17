@@ -7,7 +7,18 @@
       "patches": [
         "fx_freeze"
       ],
-      "code": "fz"
+      "code": "fz",
+      "controls": [
+        {
+          "combo": "ROW 3 STEP 16",
+          "page": "CONFIG",
+          "does": "TURNS THE FX SWITCH INTO FREEZE, OR BACK"
+        },
+        {
+          "combo": "FX SWITCH",
+          "does": "WHEN TURNED ON (CONFIG ROW 3 STEP 16): LONG FREEZES THE DELAY OR THE REVERB TAIL"
+        }
+      ]
     }
   ]
 }

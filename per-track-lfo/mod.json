@@ -7,7 +7,29 @@
       "patches": [
         "per_track_lfo"
       ],
-      "code": "lf"
+      "code": "lf",
+      "controls": [
+        {
+          "combo": "TRIGGER + LFO RATE",
+          "does": "THE HELD VOICES GET THEIR OWN LFO, AT THIS RATE"
+        },
+        {
+          "combo": "TRIGGER + LFO WAVE",
+          "does": "THE HELD VOICES GET THEIR OWN LFO, WITH THIS WAVE"
+        },
+        {
+          "combo": "TRIGGER + MOD LVL",
+          "does": "THE HELD VOICES GET THEIR OWN LFO, AT THIS LEVEL"
+        },
+        {
+          "combo": "TRIGGER + SYNC",
+          "does": "THE HELD VOICES GET THEIR OWN LFO, ITS SYNC SWITCHED"
+        },
+        {
+          "combo": "RESET + LFO RATE",
+          "does": "PUTS EVERY VOICE BACK ON THE MAIN LFO"
+        }
+      ]
     }
   ]
 }

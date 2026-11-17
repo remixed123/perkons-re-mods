@@ -41,4 +41,3 @@ with all four voices: the unit behaves as the factory firmware.
 * Restarting the sequencer restarts every LFO.
 * Groups are not saved: they last until RESET + RATE, a clear, or power-off. Kits save and
   load the main LFO as usual.
-* The MIDI tracks of [eight-lanes](../eight-lanes/) have no LFO.

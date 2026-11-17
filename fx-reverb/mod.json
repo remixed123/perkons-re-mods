@@ -7,7 +7,14 @@
       "patches": [
         "fx_reverb"
       ],
-      "code": "rv"
+      "code": "rv",
+      "controls": [
+        {
+          "combo": "ROW 3 STEP 15",
+          "page": "CONFIG",
+          "does": "SWITCHES THE FX BETWEEN THE BBD DELAY AND THE REVERB"
+        }
+      ]
     }
   ]
 }

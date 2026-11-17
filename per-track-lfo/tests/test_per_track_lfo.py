@@ -127,15 +127,6 @@ class TestPerTrackLfo(unittest.TestCase):
         self.assertTrue(voice_differs(t, 1))
         self.assertTrue(all(x[0] == x[2] == x[3] for x in t))       # the others follow main
 
-    def test_with_eight_tracks(self):
-        r = Rig(('eight_lanes',))
-        r.held.add(TRIG1 + 3)
-        r.turn(RATE, 0.95)
-        r.held.clear()
-        t = r.tunes(200)
-        self.assertTrue(voice_differs(t, 3))
-        self.assertTrue(all(x[0] == x[1] == x[2] for x in t))
-
     def test_selection_follows_the_knobs_main_keeps_its_value(self):
         r = Rig()
         inc = r.inc()

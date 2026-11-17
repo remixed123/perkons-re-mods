@@ -11,8 +11,7 @@
  * group with the selection's settings; clearing a track, its automation or a pattern
  * merges back to the main group as it is. Groups live until then or power-off.
  * Trigger LEDs, when groups exist: dim for a voice in a group of its own, pulsing with the
- * LFO for the selection (hits and mutes show full as stock).
- * The MIDI-only lanes of eight-lanes have no LFO: the sender only modulates voices 1-4. */
+ * LFO for the selection (hits and mutes show full as stock). */
 #include <stdint.h>
 #include "pk_host.h"
 

@@ -8,7 +8,37 @@
         "voice_step_sampler"
       ],
       "code": "ss",
-      "kind": "voice"
+      "kind": "voice",
+      "controls": [
+        {
+          "combo": "STEP + SHUFFLE",
+          "page": "MAIN",
+          "does": "ON STEP SAMPLER TRACKS: OPENS THE SAMPLE PAGE FOR THE HELD STEPS"
+        },
+        {
+          "combo": "STEP",
+          "page": "SAMPLES",
+          "does": "CHOOSES THAT SAMPLE FOR THE HELD STEPS AND THE TRACK"
+        },
+        {
+          "combo": "CLEAR + STEP",
+          "page": "MAIN",
+          "does": "ALSO CLEARS THE STEP'S SAMPLE",
+          "adds": true
+        },
+        {
+          "combo": "STEP + REC",
+          "page": "MAIN",
+          "does": "ALSO COPIES THE STEP'S SAMPLE",
+          "adds": true
+        },
+        {
+          "combo": "STEP + SHIFT",
+          "page": "MAIN",
+          "does": "ALSO PASTES THE STEP'S SAMPLE",
+          "adds": true
+        }
+      ]
     }
   ]
 }

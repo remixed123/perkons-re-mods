@@ -32,8 +32,8 @@ on your computer.
 | **fx-reverb** | a reverb in place of the BBD delay, switched in the config menu | [fx-reverb/README.md](fx-reverb/README.md) |
 | **fx-freeze** | the FX section's 2-way switch as freeze: loops the delay, or holds the reverb | [fx-freeze/README.md](fx-freeze/README.md) |
 | **fx-sidechain** | the master voice's triggers duck the other three voices; depth, attack, hold and release on the step rows | [fx-sidechain/README.md](fx-sidechain/README.md) |
-| **eight-lanes** | four more sequencer tracks, 5-8, on a second page (SHIFT + PATTERN), sending MIDI only | [eight-lanes/README.md](eight-lanes/README.md) |
 | **per-track-lfo** | LFO groups: hold trigger keys and turn the LFO knobs to give those voices their own LFO | [per-track-lfo/README.md](per-track-lfo/README.md) |
+| **seq-unquantized** | the trigger keys and MIDI notes record your hits where you played them, off the grid (config row 3 step 13) | [seq-unquantized/README.md](seq-unquantized/README.md) |
 | **pattern-bpm** | each pattern keeps the tempo it was saved at, and plays at it (config row 3 step 14) | [pattern-bpm/README.md](pattern-bpm/README.md) |
 
 All of them are for Pērkons firmware **1.3.0**, and any combination can be built together.

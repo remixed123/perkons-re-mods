@@ -7,7 +7,14 @@
       "patches": [
         "pattern_bpm"
       ],
-      "code": "pb"
+      "code": "pb",
+      "controls": [
+        {
+          "combo": "ROW 3 STEP 14",
+          "page": "CONFIG",
+          "does": "TURNS PER PATTERN TEMPOS ON OR OFF"
+        }
+      ]
     }
   ]
 }
