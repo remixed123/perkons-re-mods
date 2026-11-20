@@ -5,8 +5,9 @@
  * (Strum up / down, Spread, Bass drop, Mutate); and a sound (ak_sound.h: its preset's own, or
  * one Random made). They're kept with the kit (the M4 host's kit sidecar, KITS/PP.KIX, record
  * AKRD: 4 x 26 bytes, below; older 4 x 9, 4 x 5 and 4 x 4 ones, the last without progressions
- * and with 14 chord types, are read too: their presets' sounds, no options); a kit without
- * one has all at 0 and the presets' sounds. Loading a kit, and every change on the page,
+ * and with 14 chord types, are read too: their presets' sounds, no options), for the voices
+ * that run Akords in it, in voice-map's kit slots (pk_vm_kit_slot: the entry below, all 0 =
+ * none); any other voice, and a kit without one, has all at 0 and the presets' sounds. Loading a kit, and every change on the page,
  * sends all four voices' settings to the M7 in order with the triggers (message "akords"),
  * and a voice's sound and options (message "akords-voice"), so the next chord plays them.
  *
@@ -114,8 +115,8 @@ typedef struct {
 #define O_KEPT          (AK_O_ALL | O_RANDOM)
 #define RECORD2         (RECORD + 1 + AK_PACKED)    /* a voice in the 4 x 26 record */
 #define WORDS           __attribute__((aligned(4)))
-static uint8_t kit_set[NKITS][4][ENTRY] WORDS;  /* each kit's settings and sound, per voice (MAIN) */
-_Static_assert(sizeof kit_set % 4 == 0, "whole words");
+_Static_assert(ENTRY == 23, "the kit slot's size: kit_bytes in patches/voice_akords.py");
+static const uint8_t NONE[ENTRY];               /* an entry with nothing kept: all 0 */
 static sound_t snd[4] WORDS;                    /* the knobs' values playing */
 /* a kit loaded: the M7 holds its sound until the positions arrive (ms, low 16 bits) */
 #define HOLD_SETTLED_MS 20          /* the playing values have matched the kit's this long */
@@ -182,6 +183,12 @@ static int current_kit(void)
     return *(volatile uint16_t *)(uintptr_t)SYM_current_kit;
 }
 
+/* voice v's kit slot in kit, if the voice runs Akords there; else 0 */
+static uint8_t *slot_of(int kit, int v)
+{
+    return pk_vm_kit_slot(kit, v, PK_AK_ENGINE, ENTRY);
+}
+
 /* a kit's table entry: preset | chord << 4, scale | root << 4, progression | flags, values */
 static void pack_settings(uint8_t to[PACKED], const uint8_t from[NSET], uint8_t flags, const uint8_t val[NKEPT])
 {
@@ -201,20 +208,23 @@ static void unpack_settings(uint8_t to[NSET], const uint8_t from[PACKED])
     to[4] = from[2] & 7;
 }
 
-/* the kit's entries hold what the page sets now: settings, options, sounds (a knob turned
- * alone doesn't write the card on leaving the page) */
-static int same(const uint8_t a[4][ENTRY])
+/* the kit's entries (its Akords voices') hold what the page sets now: settings, options,
+ * sounds (a knob turned alone doesn't write the card on leaving the page) */
+static int same(int kit)
 {
     for (int v = 0; v < 4; v++) {
+        const uint8_t *e = slot_of(kit, v);
+        if (!e)
+            continue;                   /* not ours in this kit */
         uint8_t s[NSET];
-        unpack_settings(s, a[v]);
+        unpack_settings(s, e);
         for (int i = 0; i < NSET; i++)
             if (s[i] != cur[v][i])
                 return 0;
-        if ((a[v][E_OPTS] & (O_KEPT | O_SOUND)) != ((opt[v] & O_KEPT) | O_SOUND))
+        if ((e[E_OPTS] & (O_KEPT | O_SOUND)) != ((opt[v] & O_KEPT) | O_SOUND))
             return 0;
         for (int i = 0; i < AK_PACKED; i++)
-            if (a[v][E_SOUND + i] != voice_snd[v][i])
+            if (e[E_SOUND + i] != voice_snd[v][i])
                 return 0;
     }
     return 1;
@@ -392,9 +402,12 @@ void pk_ak_kit_load(int kit)
     ready = 1;
     undo_ok = 0;
     for (int v = 0; v < 4; v++) {
-        unpack_settings(cur[v], kit_set[kit][v]);
-        sound_set(v, kit_set[kit][v]);
-        entry_sound(v, kit_set[kit][v]);
+        const uint8_t *e = slot_of(kit, v);
+        if (!e)
+            e = NONE;                   /* another engine's voice in this kit: nothing kept */
+        unpack_settings(cur[v], e);
+        sound_set(v, e);
+        entry_sound(v, e);
     }
     send(0);
     for (int v = 0; v < 4; v++)
@@ -406,8 +419,8 @@ void pk_ak_kit_load(int kit)
 
 /* the host's kit sidecar, record "AKRD": [voice][preset, chord, scale, root, progression,
  * flags, resonance, env amount, attack, options, the sound (16 bytes)]; none = all 0 and
- * the presets' sounds. A voice not running Akords keeps its settings, options and sound
- * but not the knobs' values. */
+ * the presets' sounds: the voices that run Akords in the kit (the others none); no record if
+ * none of them keeps anything. */
 uint32_t pk_ak_kit_save(int bank, int kit, uint8_t *buf, uint32_t max)
 {
     (void)bank;
@@ -415,13 +428,21 @@ uint32_t pk_ak_kit_save(int bank, int kit, uint8_t *buf, uint32_t max)
     uint32_t n = 4 * RECORD2, any = 0;
     make_ready();
     sound_poll();
+    if (kit < 0 || kit >= NKITS)
+        return 0;
     for (int v = 0; v < 4; v++) {
+        uint8_t *e = slot_of(kit, v);
+        if (!e) {                       /* another engine's voice in this kit: none */
+            for (int i = 0; max >= n && i < RECORD2; i++)
+                buf[v * RECORD2 + i] = 0;
+            continue;
+        }
         const sound_t *s = &snd[v];
         uint8_t flags = s->running ? (uint8_t)(KEPT | (s->own ? 0 : KEPT_MODE)
                                                | (s->armed & 1 ? 0 : KEPT_CUT_OWN)) : 0;
         const uint8_t *val = s->running ? s->val : none;
-        pack_settings(kit_set[kit][v], cur[v], flags, val);
-        entry_put_sound(kit_set[kit][v], v);
+        pack_settings(e, cur[v], flags, val);
+        entry_put_sound(e, v);
         if (max >= n) {
             uint8_t *r = buf + v * RECORD2;
             for (int i = 0; i < NSET; i++)
@@ -458,7 +479,9 @@ void pk_ak_kit_restore(int bank, int kit, const uint8_t *rec, uint32_t len)
         }
         const uint8_t *r = rec + v * n;
         uint8_t flags = n >= RECORD && r[NSET] & KEPT ? r[NSET] & KEPT_FLAGS : 0;
-        uint8_t *e = kit_set[kit][v];
+        uint8_t *e = slot_of(kit, v);   /* (the kit's engines are read before this) */
+        if (!e)
+            continue;                   /* another engine's voice in this kit */
         pack_settings(e, set, flags, flags ? r + NSET + 1 : none);
         e[E_OPTS] = 0;                  /* older records: the preset's sound */
         if (n == RECORD2) {
@@ -1081,6 +1104,6 @@ void pk_ak_page_leave(void)
 {
     int bank = FW_U8(SYM_bank_number), kit = current_kit();
     key_held = 0;
-    if (kit >= 0 && kit < NKITS && !same(kit_set[kit]))
+    if (kit >= 0 && kit < NKITS && !same(kit))
         pk_store_save_kit(bank, kit);
 }

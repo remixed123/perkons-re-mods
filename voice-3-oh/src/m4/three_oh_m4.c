@@ -3,8 +3,10 @@
  *
  * A voice's sound is 23 small values, packed in 11 bytes (oh_sound.h): the sound the M7 plays
  * and the voice's line settings, as the kit keeps them (the M4 host's kit sidecar,
- * KITS/PP.KIX, record 3OHS: 4 x 11 bytes); a kit without one has the default presets (1, 2,
- * 10, 14 on voices 1-4). Presets, the page and New sound all write these values.
+ * KITS/PP.KIX, record 3OHS: 4 x 11 bytes) for the voices that run 3 Oh in it, in voice-map's
+ * kit slots (pk_vm_kit_slot: a "saved" byte, then the 11); any other voice, and a kit without
+ * one, has the default presets (1, 2, 10, 14 on voices 1-4). Presets, the page and New sound
+ * all write these values.
  *
  * The line: the generator writes it into the voice's own track of the pattern playing (the
  * steps' on / off, note and velocity; their other settings and the locks stay), as a hand edit
@@ -44,6 +46,7 @@
 
 #define NKITS           64
 #define NB              OH_PACKED
+#define SLOT_BYTES      (1 + NB)    /* a kit slot: [0] 1 = saved, then the sound */
 #define LED_ON          0x80
 #define LED_MID         0x38
 #define LED_DIM         0x10
@@ -66,7 +69,6 @@ typedef struct {
 
 /* (every variable whole words, word-aligned: the M4 host clears its RAM a word at a time) */
 #define WORDS __attribute__((aligned(4)))
-static uint8_t kit_snd[NKITS][4][NB] WORDS;     /* each kit's sounds (MAIN): 2,560 B */
 static uint8_t oh_cur[4][NB] WORDS;             /* the sounds playing */
 static follow_t fol[4] WORDS;
 /* undo: the last New line / Keep rhythm / Vary (the steps it wrote) or New sound, of one voice */
@@ -80,7 +82,6 @@ typedef struct {
 static undo_t undo WORDS;
 static uint32_t pending;                        /* an action from the page, done in the main loop: action + 1 */
 static uint32_t editing, ready, active;         /* the page's voice; oh_cur filled; the page open */
-static uint32_t kit_ok[NKITS / 32];
 static uint32_t rng;
 /* a kit loaded: the M7 holds its values until the positions arrive (ms, low 16 bits) */
 #define HOLD_SETTLED_MS 20
@@ -124,6 +125,12 @@ static void defaults(uint8_t to[4][NB])
 {
     for (int v = 0; v < 4; v++)
         preset_into(to[v], DEFAULT_PRESET[v]);
+}
+
+/* voice v's kit slot in kit, if the voice runs 3 Oh there; else 0 */
+static uint8_t *slot_of(int kit, int v)
+{
+    return pk_vm_kit_slot(kit, v, PK_OH_ENGINE, SLOT_BYTES);
 }
 
 static void make_ready(void)
@@ -254,11 +261,12 @@ void pk_oh_kit_load(int kit)
     PK_NEXT(pk_oh_kit_load)(kit);
     if (kit < 0 || kit >= NKITS)
         return;
-    if (!(kit_ok[kit / 32] >> (kit % 32) & 1))
-        defaults(kit_snd[kit]);
+    defaults(oh_cur);                           /* voices without a slot of ours: the defaults */
     for (int v = 0; v < 4; v++) {
-        for (int b = 0; b < NB; b++)
-            oh_cur[v][b] = kit_snd[kit][v][b];
+        const uint8_t *e = slot_of(kit, v);
+        if (e && e[0])
+            for (int b = 0; b < NB; b++)
+                oh_cur[v][b] = e[1 + b];
         follow_reset(v);
     }
     undo.kind = 0;
@@ -270,39 +278,43 @@ void pk_oh_kit_load(int kit)
     send_all(15, F_HELD);
 }
 
+/* record "3OHS": 4 x 11 bytes, the voices that run 3 Oh in the kit (the others their
+ * default presets); none if no voice does */
 uint32_t pk_oh_kit_save(int bank, int kit, uint8_t *buf, uint32_t max)
 {
     (void)bank;
     poll();
-    if (kit >= 0 && kit < NKITS) {
-        for (int v = 0; v < 4; v++)
-            for (int b = 0; b < NB; b++)
-                kit_snd[kit][v][b] = oh_cur[v][b];
-        kit_ok[kit / 32] |= 1u << (kit % 32);
-    }
-    if (max < 4 * NB)
+    if (kit < 0 || kit >= NKITS || max < 4 * NB)
         return 0;
-    for (int v = 0; v < 4; v++)
-        for (int b = 0; b < NB; b++)
-            buf[v * NB + b] = oh_cur[v][b];
-    return 4 * NB;
+    int any = 0;
+    for (int v = 0; v < 4; v++) {
+        uint8_t *e = slot_of(kit, v);
+        if (e) {
+            e[0] = 1;
+            for (int b = 0; b < NB; b++)
+                buf[v * NB + b] = e[1 + b] = oh_cur[v][b];
+            any = 1;
+        } else {
+            preset_into(buf + v * NB, DEFAULT_PRESET[v]);
+        }
+    }
+    return any ? 4 * NB : 0;
 }
 
 void pk_oh_kit_restore(int bank, int kit, const uint8_t *rec, uint32_t len)
 {
     (void)bank;
-    if (kit < 0 || kit >= NKITS)
-        return;
-    kit_ok[kit / 32] |= 1u << (kit % 32);
-    if (len != 4 * NB) {                        /* none (or not ours): the defaults */
-        defaults(kit_snd[kit]);
-        return;
-    }
+    if (kit < 0 || kit >= NKITS || len != 4 * NB)
+        return;                                 /* none (or not ours): the slots stay empty, defaults */
     for (int v = 0; v < 4; v++) {
+        uint8_t *e = slot_of(kit, v);           /* (the kit's engines are read before this) */
+        if (!e)
+            continue;
         uint8_t x[OH_NFIELD];
         oh_unpack(rec + v * NB, x);
         oh_clean(x);
-        oh_pack(x, kit_snd[kit][v]);
+        oh_pack(x, e + 1);
+        e[0] = 1;
     }
 }
 
@@ -822,10 +834,14 @@ void pk_oh_page_leave(void)
     int bank = FW_U8(SYM_bank_number), kit = current_kit();
     if (kit < 0 || kit >= NKITS)
         return;
-    for (int v = 0; v < 4; v++)
+    for (int v = 0; v < 4; v++) {
+        const uint8_t *e = slot_of(kit, v);
+        if (!e)
+            continue;                   /* not ours in this kit */
         for (int b = 0; b < NB; b++)
-            if (kit_snd[kit][v][b] != oh_cur[v][b]) {
+            if (!e[0] || e[1 + b] != oh_cur[v][b]) {
                 pk_store_save_kit(bank, kit);
                 return;
             }
+    }
 }

@@ -36,8 +36,11 @@ def image():
 DEFAULTS = [preset(i) for i in (0, 1, 9, 13)]
 
 
-def record(voices):
-    return b'PKX13OHS' + struct.pack('<I', 4 * NB) + b''.join(pack(v) for v in voices)
+def record(voices, engines=0x4444):
+    """A kit file: 3OHS, then the kit's engines (VMAP; last, as files saved before the kit
+    slots have it: it's read first anyway); engines 0x4444: 3 Oh on every voice."""
+    return (b'PKX13OHS' + struct.pack('<I', 4 * NB) + b''.join(pack(v) for v in voices)
+            + b'VMAP' + struct.pack('<IH', 2, engines))
 
 
 class TestThreeOhPage(unittest.TestCase):
@@ -393,6 +396,22 @@ class TestThreeOhPage(unittest.TestCase):
         buf = r.sym.g['json_buf']
         self.assertEqual(r.e.call(r.cave['pk_oh_kit_save'], 2, 5, buf, 512, max_insns=5_000_000), 4 * NB)
         self.assertEqual(unpack(bytes(r.e.uc.mem_read(buf, NB))), preset(9))
+
+    def test_only_the_voices_running_3_oh_keep_their_sounds(self):
+        """The kit slots: voice 3 runs 3 Oh in kit 6, the others stock engines (an older
+        file has all four voices' sounds): only voice 3's count."""
+        rec = record([preset(9), preset(9), preset(9), preset(9)], engines=0x3410)
+        r = self.rig(sd={'BANKS/02/KITS/05.KIX': rec, 'BANKS/02/00.PAT': b''})
+        r.e.call(r.cave['pk4_store_bank_load'], 2, max_insns=900_000_000)
+        r.e.sent(2)
+        r.e.call(r.cave['pk_oh_kit_load'], 5, max_insns=50_000_000)
+        self.assertEqual([x for _, _, x in self.sent(r)][:4], [DEFAULTS[0], DEFAULTS[1], preset(9), DEFAULTS[3]])
+        buf = r.sym.g['json_buf']
+        self.assertEqual(r.e.call(r.cave['pk_oh_kit_save'], 2, 5, buf, 512, max_insns=5_000_000), 4 * NB)
+        self.assertEqual([unpack(bytes(r.e.uc.mem_read(buf + v * NB, NB))) for v in range(4)],
+                         [DEFAULTS[0], DEFAULTS[1], preset(9), DEFAULTS[3]])
+        self.assertEqual(r.e.call(r.cave['pk_oh_kit_save'], 2, 6, buf, 512, max_insns=5_000_000), 0,
+                         'kit 7: no voice runs 3 Oh, no record')
 
 
 if __name__ == '__main__':

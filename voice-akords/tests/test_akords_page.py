@@ -16,6 +16,7 @@ MAIN_MODE, MOD_MODE, KIT_MODE = 0, 3, 5
 AKORDS_PAGE, ENGINES_PAGE = 17, 18            # the mods' pages after the stock 0-16, in name order
 MSG_AKORDS, MSG_AKORDS_DRIVE, MSG_AKORDS_PROG, MSG_AKORDS_SOUND, MSG_AKORDS_VOICE, MSG_VOICE_MAP = 4, 5, 6, 7, 8, 9             # the M7 host's message types, in name order
 COL = 4                                       # Akords' column (engine 5)
+VMAP_ALL = b'VMAP' + struct.pack('<IH', 2, 0x4444)   # a kit's engines: Akords on every voice
 _image = {}
 
 
@@ -252,10 +253,12 @@ class TestSettingsPage(unittest.TestCase):
         self.press(r, SHIFT)
         self.apply(r)
         kix = r.e.sd_written['banks/00/kits/00.kix']
-        self.assertEqual(kix[:12], b'PKX1AKRD' + struct.pack('<I', 104))
+        self.assertEqual(kix[:14], b'PKX1VMAP' + struct.pack('<IH', 2, 0x3240), 'the engines first')
+        kix = kix[10:]
+        self.assertEqual(kix[4:12], b'AKRD' + struct.pack('<I', 104))
         self.assertEqual(kix[12 + 26], 7, 'voice 2\'s preset')
         self.assertEqual(kix[12 + 26 + 10:12 + 52], bytes(ak_pack(PRESET_FIELDS[7])), 'its sound')
-        self.assertEqual(kix[116:], b'VMAP' + struct.pack('<IH', 2, 0x3240))
+        self.assertEqual(kix[12:12 + 26] + kix[12 + 52:], bytes(3 * 26), 'the other voices: not Akords, none')
 
     def test_kit_load_sends_its_settings(self):
         r = self.rig()
@@ -271,16 +274,26 @@ class TestSettingsPage(unittest.TestCase):
 
     def test_bank_load_reads_the_kits(self):
         rec = b'PKX1AKRD' + struct.pack('<I', 16) + bytes(range(16)[:11]) + bytes([3, 2, 1, 0, 12])
-        r = self.rig(sd={'BANKS/02/KITS/05.KIX': rec, 'BANKS/02/00.PAT': b''})
+        r = self.rig(sd={'BANKS/02/KITS/05.KIX': rec + VMAP_ALL, 'BANKS/02/00.PAT': b''})
         r.e.call(r.cave['pk4_store_bank_load'], 2, max_insns=900_000_000)
         r.e.call(r.cave['pk_ak_kit_load'], 5, max_insns=50_000_000)
         self.assertEqual(self.settings(r), [[[0, 1, 2, 3], [4, 9, 6, 7], [8, 1, 10, 3], [2, 1, 0, 0]]],
                          'an older record (14 chord types: 5, Diatonic 9th smooth, plays Rootless 9th '
                          'smooth; 9, Sus2 smooth, plays Diatonic smooth); out of range (12): 0')
 
+    def test_only_the_voices_running_akords_keep_their_settings(self):
+        """The kit slots: voice 2 runs Akords in kit 6, the others stock engines (an older
+        file has all four voices' settings): only voice 2's count."""
+        rec = b'PKX1AKRD' + struct.pack('<I', 20) + bytes([1, 2, 3, 4, 5] * 4)
+        r = self.rig(sd={'BANKS/02/KITS/05.KIX': rec + b'VMAP' + struct.pack('<IH', 2, 0x3240),
+                         'BANKS/02/00.PAT': b''})
+        r.e.call(r.cave['pk4_store_bank_load'], 2, max_insns=900_000_000)
+        r.e.call(r.cave['pk_ak_kit_load'], 5, max_insns=50_000_000)
+        self.assertEqual(self.settings(r), [[[0] * 4, [1, 2, 3, 4], [0] * 4, [0] * 4]])
+
     def test_a_kit_keeps_the_progressions(self):
         rec = b'PKX1AKRD' + struct.pack('<I', 20) + bytes([1, 2, 3, 4, 5, 0, 9, 0, 0, 6] + [0] * 10)
-        r = self.rig(sd={'BANKS/02/KITS/05.KIX': rec, 'BANKS/02/00.PAT': b''})
+        r = self.rig(sd={'BANKS/02/KITS/05.KIX': rec + VMAP_ALL, 'BANKS/02/00.PAT': b''})
         r.e.call(r.cave['pk4_store_bank_load'], 2, max_insns=900_000_000)
         r.e.call(r.cave['pk_ak_kit_load'], 5, max_insns=50_000_000)
         self.assertEqual(self.settings(r), [[[1, 2, 3, 4], [0, 9, 0, 0], [0] * 4, [0] * 4]])
@@ -292,7 +305,7 @@ class TestSettingsPage(unittest.TestCase):
     def test_the_largest_settings_survive_the_kit_table(self):
         top = [13, 9, 10, 11, 5]                                # Talk, Power smooth, Chromatic, B, Deep
         rec = b'PKX1AKRD' + struct.pack('<I', 20) + bytes(top * 4)
-        r = self.rig(sd={'BANKS/02/KITS/05.KIX': rec, 'BANKS/02/00.PAT': b''})
+        r = self.rig(sd={'BANKS/02/KITS/05.KIX': rec + VMAP_ALL, 'BANKS/02/00.PAT': b''})
         r.e.call(r.cave['pk4_store_bank_load'], 2, max_insns=900_000_000)
         r.e.call(r.cave['pk_ak_kit_load'], 5, max_insns=50_000_000)
         self.assertEqual(self.settings(r), [[top[:4]] * 4])

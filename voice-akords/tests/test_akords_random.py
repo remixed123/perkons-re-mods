@@ -20,6 +20,7 @@ import ak_sound as S  # noqa: E402
 SHIFT, KIT, MOD = 0x47, 0x41, 0x43
 KIT_MODE, AKORDS_PAGE, ENGINES_PAGE = 5, 17, 18
 COL = 4                                     # Akords' column (engine 5)
+VMAP_ALL = b'VMAP' + struct.pack('<IH', 2, 0x4444)   # a kit's engines: Akords on every voice
 ROW3, ROW4 = 32, 48                         # the page's rows 3 and 4 (key of step 1)
 STRUM_UP, STRUM_DOWN, SPREAD, DROP, MUTATE = (ROW3 + c for c in range(11, 16))
 MILD, WILD, RECIPE, ALL = (ROW4 + c for c in range(12, 16))
@@ -125,8 +126,8 @@ class TestRandomPage(unittest.TestCase):
         _, fields, _ = self.random(r, RECIPE)
         self.press(r, SHIFT)
         self.apply(r)
-        kix = r.e.sd_written['banks/00/kits/00.kix']
-        self.assertEqual(kix[:12], b'PKX1AKRD' + struct.pack('<I', 104))
+        kix = r.e.sd_written['banks/00/kits/00.kix'][10:]      # past the engines (VMAP, first)
+        self.assertEqual(kix[4:12], b'AKRD' + struct.pack('<I', 104))
         rec = kix[12 + 26:12 + 52]
         self.assertEqual(rec[9], S.O_STRUM_UP | S.O_MUTATE | 0x40, 'options, Random')
         self.assertEqual(S.ak_unpack(rec[10:26]), fields)
@@ -142,9 +143,10 @@ class TestRandomPage(unittest.TestCase):
         self.press(r, DROP)
         _, fields, _ = self.random(r, WILD)
         buf = r.sym.g['json_buf']
+        r.e.call(r.cave['pk_vm_kit_save'], 0, 3, buf, 128, max_insns=5_000_000)    # the engines first, as the host
         n = r.e.call(r.cave['pk_ak_kit_save'], 0, 3, buf, 128, max_insns=5_000_000)
         rec = bytes(r.e.uc.mem_read(buf, n))
-        r2 = self.rig(sd={'BANKS/00/KITS/03.KIX': b'PKX1AKRD' + struct.pack('<I', n) + rec,
+        r2 = self.rig(sd={'BANKS/00/KITS/03.KIX': b'PKX1AKRD' + struct.pack('<I', n) + rec + VMAP_ALL,
                           'BANKS/00/00.PAT': b''})
         r2.e.call(r2.cave['pk4_store_bank_load'], 0, max_insns=900_000_000)
         r2.e.sent(2)
@@ -153,7 +155,7 @@ class TestRandomPage(unittest.TestCase):
 
     def test_an_older_record_plays_the_presets(self):
         rec = b'PKX1AKRD' + struct.pack('<I', 36) + bytes([3, 0, 0, 0, 0, 0, 128, 128, 128] * 4)
-        r = self.rig(sd={'BANKS/00/KITS/02.KIX': rec, 'BANKS/00/00.PAT': b''})
+        r = self.rig(sd={'BANKS/00/KITS/02.KIX': rec + VMAP_ALL, 'BANKS/00/00.PAT': b''})
         r.e.call(r.cave['pk4_store_bank_load'], 0, max_insns=900_000_000)
         r.e.sent(2)
         r.e.call(r.cave['pk_ak_kit_load'], 2, max_insns=50_000_000)

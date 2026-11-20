@@ -1,9 +1,11 @@
 /* Synth Lab, M4 side: each kit's sounds, the configuration page, Random, Tweak, the tempo and DRIVE.
  *
  * A voice's sound is 88 small values, packed in 40 bytes (sl_sound.h), as the M7 plays it and
- * the kit keeps it (the M4 host's kit sidecar, KITS/PP.KIX, record SLAB: 4 x 40 bytes); a kit
- * without one has the default presets (1, 5, 12, 14 on voices 1-4). Presets, the page, Random
- * and Tweak all write these values: what plays is what's saved.
+ * the kit keeps it (the M4 host's kit sidecar, KITS/PP.KIX, record SLAB: 4 x 40 bytes) for the
+ * voices that run Synth Lab in it, in voice-map's kit slots (pk_vm_kit_slot: the 40 bytes, the
+ * last one's spare top bit = saved); any other voice, and a kit without one, has the default
+ * presets (1, 5, 12, 14 on voices 1-4). Presets, the page, Random and Tweak all write these
+ * values: what plays is what's saved.
  *
  * PARAM2: ALGO chooses its job, and it sets three values. The kit keeps only the knob's
  * position, so this core follows the M7's rule on the knob's own position (no locks) and
@@ -38,6 +40,8 @@
 
 #define NKITS           64
 #define NB              SL_PACKED
+#define SAVED           0x80        /* a kit slot: in its last byte, past the sound's bits: saved */
+_Static_assert(SL_BITS <= 8 * SL_PACKED - 1, "a spare bit for SAVED");
 #define LED_ON          0x80
 #define LED_MID         0x38
 #define LED_DIM         0x10
@@ -62,13 +66,11 @@ typedef struct {
 
 /* (every variable whole words, word-aligned: the M4 host clears its RAM a word at a time) */
 #define WORDS __attribute__((aligned(4)))
-static uint8_t kit_snd[NKITS][4][NB] WORDS;     /* each kit's sounds (MAIN): 10,240 B */
 static uint8_t sy_cur[4][NB] WORDS;                /* the sounds playing */
 static uint8_t undo[4][NB] WORDS;               /* each voice's sound before its last Tweak / Random */
 static follow_t fol[4] WORDS;
 static uint32_t undo_ok;                        /* voices (bits) with an undo */
 static uint32_t editing, ready, active;         /* the page's voice; sy_cur filled; the page open */
-static uint32_t kit_ok[NKITS / 32];
 static uint32_t rng;
 /* a kit loaded: the M7 holds its values until the positions arrive (ms, low 16 bits) */
 #define HOLD_SETTLED_MS 20
@@ -115,6 +117,12 @@ static void defaults(uint8_t to[4][NB])
 {
     for (int v = 0; v < 4; v++)
         preset_into(to[v], DEFAULT_PRESET[v]);
+}
+
+/* voice v's kit slot in kit, if the voice runs Synth Lab there; else 0 */
+static uint8_t *slot_of(int kit, int v)
+{
+    return pk_vm_kit_slot(kit, v, PK_SY_ENGINE, NB);
 }
 
 static void make_ready(void)
@@ -247,11 +255,14 @@ void pk_sy_kit_load(int kit)
     PK_NEXT(pk_sy_kit_load)(kit);
     if (kit < 0 || kit >= NKITS)
         return;
-    if (!(kit_ok[kit / 32] >> (kit % 32) & 1))
-        defaults(kit_snd[kit]);
+    defaults(sy_cur);                           /* voices without a slot of ours: the defaults */
     for (int v = 0; v < 4; v++) {
-        for (int b = 0; b < NB; b++)
-            sy_cur[v][b] = kit_snd[kit][v][b];
+        const uint8_t *e = slot_of(kit, v);
+        if (e && e[NB - 1] & SAVED) {
+            for (int b = 0; b < NB; b++)
+                sy_cur[v][b] = e[b];
+            sy_cur[v][NB - 1] &= (uint8_t)~SAVED;
+        }
         follow_reset(v);
     }
     undo_ok = 0;
@@ -262,39 +273,43 @@ void pk_sy_kit_load(int kit)
     send_all(15, F_HELD);
 }
 
+/* record "SLAB": 4 x 40 bytes, the voices that run Synth Lab in the kit (the others their
+ * default presets); none if no voice does */
 uint32_t pk_sy_kit_save(int bank, int kit, uint8_t *buf, uint32_t max)
 {
     (void)bank;
     poll();
-    if (kit >= 0 && kit < NKITS) {
-        for (int v = 0; v < 4; v++)
-            for (int b = 0; b < NB; b++)
-                kit_snd[kit][v][b] = sy_cur[v][b];
-        kit_ok[kit / 32] |= 1u << (kit % 32);
-    }
-    if (max < 4 * NB)
+    if (kit < 0 || kit >= NKITS || max < 4 * NB)
         return 0;
-    for (int v = 0; v < 4; v++)
-        for (int b = 0; b < NB; b++)
-            buf[v * NB + b] = sy_cur[v][b];
-    return 4 * NB;
+    int any = 0;
+    for (int v = 0; v < 4; v++) {
+        uint8_t *e = slot_of(kit, v);
+        if (e) {
+            for (int b = 0; b < NB; b++)
+                buf[v * NB + b] = e[b] = sy_cur[v][b];
+            e[NB - 1] |= SAVED;
+            any = 1;
+        } else {
+            preset_into(buf + v * NB, DEFAULT_PRESET[v]);
+        }
+    }
+    return any ? 4 * NB : 0;
 }
 
 void pk_sy_kit_restore(int bank, int kit, const uint8_t *rec, uint32_t len)
 {
     (void)bank;
-    if (kit < 0 || kit >= NKITS)
-        return;
-    kit_ok[kit / 32] |= 1u << (kit % 32);
-    if (len != 4 * NB) {                        /* none (or not ours): the defaults */
-        defaults(kit_snd[kit]);
-        return;
-    }
+    if (kit < 0 || kit >= NKITS || len != 4 * NB)
+        return;                                 /* none (or not ours): the slots stay empty, defaults */
     for (int v = 0; v < 4; v++) {
+        uint8_t *e = slot_of(kit, v);           /* (the kit's engines are read before this) */
+        if (!e)
+            continue;
         uint8_t x[SL_NFIELD];
         sl_unpack(rec + v * NB, x);
         sl_clean(x);
-        sl_pack(x, kit_snd[kit][v]);
+        sl_pack(x, e);
+        e[NB - 1] |= SAVED;
     }
 }
 
@@ -1027,10 +1042,14 @@ void pk_sy_page_leave(void)
     int bank = FW_U8(SYM_bank_number), kit = current_kit();
     if (kit < 0 || kit >= NKITS)
         return;
-    for (int v = 0; v < 4; v++)
+    for (int v = 0; v < 4; v++) {
+        const uint8_t *e = slot_of(kit, v);
+        if (!e)
+            continue;                   /* not ours in this kit */
         for (int b = 0; b < NB; b++)
-            if (kit_snd[kit][v][b] != sy_cur[v][b]) {
+            if (!(e[NB - 1] & SAVED) || (uint8_t)(e[b] & (b == NB - 1 ? ~SAVED : 0xff)) != sy_cur[v][b]) {
                 pk_store_save_kit(bank, kit);
                 return;
             }
+    }
 }

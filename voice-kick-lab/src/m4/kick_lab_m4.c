@@ -5,8 +5,9 @@
  *   [1] drive amount 0-8 | delay time or division 0-13 << 4
  *   [2] feedback 0-9 | delay tone 0-5 << 4 | sync << 7
  *   [3] [4] [5] attack, delay mix, drive mix (0-255): PARAM2's three values
- * They're kept with the kit (the M4 host's kit sidecar, KITS/PP.KIX, record KLAB: 4 x 6 bytes);
- * a kit without one has preset 1 (Basic) on every voice.
+ * They're kept with the kit (the M4 host's kit sidecar, KITS/PP.KIX, record KLAB: 4 x 6 bytes)
+ * for the voices that run Kick Lab in it, in voice-map's kit slots (pk_vm_kit_slot: a "saved"
+ * byte, then the 6); any other voice, and a kit without one, has preset 1 (Basic).
  *
  * PARAM2: ALGO chooses its job, and it sets three values. The kit keeps only the knob's
  * position, so this core follows the M7's rule on the knob's own position (no locks) and
@@ -49,6 +50,7 @@
 #define POS3            2
 enum { ROLE_ATTACK, ROLE_DELAY_MIX, ROLE_DRIVE_MIX };
 #define VAL             3           /* the values' first byte */
+#define SLOT_BYTES      (1 + NB)    /* a kit slot: [0] 1 = saved, then the settings */
 
 extern uint8_t pk_vm_settings_voice;
 
@@ -87,12 +89,10 @@ typedef struct {
 /* (every variable whole words, word-aligned: the M4 host records each by its size, and clears
  * a word at a time) */
 #define WORDS __attribute__((aligned(4)))
-static uint8_t kit_set[NKITS][4][NB] WORDS;     /* each kit's settings (MAIN) */
 static uint8_t cur[4][NB] WORDS;                /* the settings playing */
 static follow_t fol[4] WORDS;
 static uint32_t editing;                        /* the voice the page edits */
 static uint32_t ready;                          /* cur holds settings (a kit's, or Basic) */
-static uint32_t kit_ok[NKITS / 32];             /* kits (bits) whose table entry has been filled */
 /* a kit loaded: the M7 holds its values until the positions arrive (ms, low 16 bits) */
 #define HOLD_SETTLED_MS 20          /* the playing values have matched the kit's this long */
 #define HOLD_MAX_MS     2000        /* or this long (locks or an LFO keep them apart) */
@@ -132,6 +132,12 @@ static uint8_t to_val(uint32_t x)
 }
 
 static void defaults(uint8_t to[4][NB]);
+
+/* voice v's kit slot in kit, if the voice runs Kick Lab there; else 0 */
+static uint8_t *slot_of(int kit, int v)
+{
+    return pk_vm_kit_slot(kit, v, PK_KL_ENGINE, SLOT_BYTES);
+}
 
 /* before any kit has loaded: Basic on every voice */
 static void make_ready(void)
@@ -263,11 +269,12 @@ void pk_kl_kit_load(int kit)
     PK_NEXT(pk_kl_kit_load)(kit);
     if (kit < 0 || kit >= NKITS)
         return;
-    if (!(kit_ok[kit / 32] >> (kit % 32) & 1))
-        defaults(kit_set[kit]);                 /* (a bank load fills every kit; before one: Basic) */
+    defaults(cur);                              /* voices without a slot of ours: Basic */
     for (int v = 0; v < 4; v++) {
-        for (int b = 0; b < NB; b++)
-            cur[v][b] = kit_set[kit][v][b];
+        const uint8_t *e = slot_of(kit, v);
+        if (e && e[0])
+            for (int b = 0; b < NB; b++)
+                cur[v][b] = e[1 + b];
         follow_reset(v);
     }
     ready = 1;
@@ -276,23 +283,28 @@ void pk_kl_kit_load(int kit)
     send(15, 15);
 }
 
-/* the host's kit sidecar, record "KLAB": 4 x the 6 bytes */
+/* the host's kit sidecar, record "KLAB": 4 x the 6 bytes, the voices that run Kick Lab in
+ * the kit (the others Basic); none if no voice does */
 uint32_t pk_kl_kit_save(int bank, int kit, uint8_t *buf, uint32_t max)
 {
     (void)bank;
     poll();
-    if (kit >= 0 && kit < NKITS) {
-        for (int v = 0; v < 4; v++)
-            for (int b = 0; b < NB; b++)
-                kit_set[kit][v][b] = cur[v][b];
-        kit_ok[kit / 32] |= 1u << (kit % 32);
-    }
-    if (max < 4 * NB)
+    if (kit < 0 || kit >= NKITS || max < 4 * NB)
         return 0;
-    for (int v = 0; v < 4; v++)
+    int any = 0;
+    for (int v = 0; v < 4; v++) {
+        uint8_t *e = slot_of(kit, v);
+        const uint8_t *s = e ? cur[v] : PRESETS[0].set;
+        if (e) {
+            e[0] = 1;
+            for (int b = 0; b < NB; b++)
+                e[1 + b] = cur[v][b];
+            any = 1;
+        }
         for (int b = 0; b < NB; b++)
-            buf[v * NB + b] = cur[v][b];
-    return 4 * NB;
+            buf[v * NB + b] = s[b];
+    }
+    return any ? 4 * NB : 0;
 }
 
 /* a setting's value checked (a record from a later version can't send nonsense) */
@@ -308,17 +320,16 @@ static void clean(uint8_t s[NB])
 void pk_kl_kit_restore(int bank, int kit, const uint8_t *rec, uint32_t len)
 {
     (void)bank;
-    if (kit < 0 || kit >= NKITS)
-        return;
-    kit_ok[kit / 32] |= 1u << (kit % 32);
-    if (len != 4 * NB) {                        /* none (or not ours): Basic */
-        defaults(kit_set[kit]);
-        return;
-    }
+    if (kit < 0 || kit >= NKITS || len != 4 * NB)
+        return;                                 /* none (or not ours): the slots stay empty, Basic */
     for (int v = 0; v < 4; v++) {
+        uint8_t *e = slot_of(kit, v);           /* (the kit's engines are read before this) */
+        if (!e)
+            continue;
+        e[0] = 1;
         for (int b = 0; b < NB; b++)
-            kit_set[kit][v][b] = rec[v * NB + b];
-        clean(kit_set[kit][v]);
+            e[1 + b] = rec[v * NB + b];
+        clean(e + 1);
     }
 }
 
@@ -418,10 +429,14 @@ void pk_kl_page_leave(void)
     int bank = FW_U8(SYM_bank_number), kit = current_kit();
     if (kit < 0 || kit >= NKITS)
         return;
-    for (int v = 0; v < 4; v++)
+    for (int v = 0; v < 4; v++) {
+        const uint8_t *e = slot_of(kit, v);
+        if (!e)
+            continue;                   /* not ours in this kit */
         for (int b = 0; b < VAL; b++)
-            if (kit_set[kit][v][b] != cur[v][b]) {
+            if (!e[0] || e[1 + b] != cur[v][b]) {
                 pk_store_save_kit(bank, kit);
                 return;
             }
+    }
 }

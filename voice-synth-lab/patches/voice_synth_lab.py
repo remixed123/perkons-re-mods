@@ -31,7 +31,8 @@ def apply(p, arg=None):
         raise PatchError(f'voice-map engine name {NAME} already taken')
     vm['engines'][NAME] = {'sources': [os.path.join(SRC, 'synth_lab.c')],
                            'include_dirs': [SRC, COMMON, VOICE_MAP_M7],
-                           'build': 'pk_sy_build', 'slot': int(arg) if arg else None, 'page': 'synth_lab'}
+                           'build': 'pk_sy_build', 'slot': int(arg) if arg else None, 'page': 'synth_lab',
+                           'kit_bytes': 40}    # a voice's kit slot: the sound, its spare top bit = saved
     # M7: a voice's sound, in order with the triggers
     m7host.host(p).message('synth-lab', 'pk_sy_on_sound', ordered=True)
     # M7: the tempo (LFO sync) and each output's DRIVE (the level)

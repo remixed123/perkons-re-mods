@@ -27,7 +27,8 @@ def apply(p, arg=None):
         raise PatchError('voice-map engine name akords already taken')
     vm['engines']['akords'] = {'sources': [os.path.join(SRC, 'akords.c')], 'include_dirs': [SRC, COMMON],
                                'build': 'pk_ak_build', 'slot': int(arg) if arg else None,
-                               'page': 'akords'}
+                               'page': 'akords',
+                               'kit_bytes': 23}    # a voice's kit slot: the entry (akords_m4.c ENTRY; all 0 = none)
     # M7: each voice's settings (preset, chord type, scale, root), in order with the triggers
     m7host.host(p).message('akords', 'pk_ak_on_settings', ordered=True)
     # M7: each voice's DRIVE (the engine's level follows it)

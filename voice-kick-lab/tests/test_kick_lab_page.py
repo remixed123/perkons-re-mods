@@ -31,8 +31,11 @@ def image():
     return _image['x']
 
 
-def record(voices):
-    return b'PKX1KLAB' + struct.pack('<I', 24) + bytes(b for v in voices for b in v)
+def record(voices, engines=0x4444):
+    """A kit file: KLAB, then the kit's engines (VMAP; last, as files saved before the kit
+    slots have it: it's read first anyway); engines 0x4444: Kick Lab on every voice."""
+    return (b'PKX1KLAB' + struct.pack('<I', 24) + bytes(b for v in voices for b in v)
+            + b'VMAP' + struct.pack('<IH', 2, engines))
 
 
 @unittest.skipUnless(shutil.which('arm-none-eabi-gcc'), 'arm-none-eabi-gcc not installed')
@@ -300,3 +303,18 @@ class TestKickLabPage(unittest.TestCase):
         buf = r.sym.g['json_buf']                               # the host's record buffer
         self.assertEqual(r.e.call(r.cave['pk_kl_kit_save'], 2, 5, buf, 64, max_insns=5_000_000), 24)
         self.assertEqual(list(r.e.uc.mem_read(buf, 6)), DUB_ECHO)
+
+    def test_only_the_voices_running_kick_lab_keep_their_settings(self):
+        """The kit slots: voice 2 runs Kick Lab in kit 6, the others stock engines (an older
+        file has all four voices' settings): only voice 2's count."""
+        rec = record([DUB_ECHO, DUB_ECHO, DUB_ECHO, DUB_ECHO], engines=0x3240)
+        r = self.rig(sd={'BANKS/02/KITS/05.KIX': rec, 'BANKS/02/00.PAT': b''})
+        r.e.call(r.cave['pk4_store_bank_load'], 2, max_insns=900_000_000)
+        r.e.sent(2)
+        r.e.call(r.cave['pk_kl_kit_load'], 5, max_insns=50_000_000)
+        self.assertEqual(self.sent(r)[0][0], [BASIC, DUB_ECHO, BASIC, BASIC])
+        buf = r.sym.g['json_buf']
+        self.assertEqual(r.e.call(r.cave['pk_kl_kit_save'], 2, 5, buf, 64, max_insns=5_000_000), 24)
+        self.assertEqual(list(r.e.uc.mem_read(buf, 24)), BASIC + DUB_ECHO + BASIC + BASIC)
+        self.assertEqual(r.e.call(r.cave['pk_kl_kit_save'], 2, 6, buf, 64, max_insns=5_000_000), 0,
+                         'kit 7: no voice runs Kick Lab, no record')

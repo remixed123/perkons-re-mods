@@ -30,7 +30,8 @@ def apply(p, arg=None):
         raise PatchError(f'voice-map engine name {NAME} already taken')
     vm['engines'][NAME] = {'sources': [os.path.join(SRC, 'three_oh.c')],
                            'include_dirs': [SRC, COMMON, VOICE_MAP_M7],
-                           'build': 'pk_oh_build', 'slot': int(arg) if arg else None, 'page': 'three_oh'}
+                           'build': 'pk_oh_build', 'slot': int(arg) if arg else None, 'page': 'three_oh',
+                           'kit_bytes': 12}    # a voice's kit slot: saved flag + 11 bytes (three_oh_m4.c)
     # M7: a voice's sound, in order with the triggers
     m7host.host(p).message('three-oh', 'pk_oh_on_sound', ordered=True)
     # M7: the tempo (the gate length) and each output's DRIVE (the level)

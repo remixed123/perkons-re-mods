@@ -49,8 +49,11 @@ def starter(j):
     return preset(16 + j)
 
 
-def record(voices):
-    return b'PKX1SLAB' + struct.pack('<I', 160) + b''.join(pack(v) for v in voices)
+def record(voices, engines=0x4444):
+    """A kit file: SLAB, then the kit's engines (VMAP; last, as files saved before the kit
+    slots have it: it's read first anyway); engines 0x4444: Synth Lab on every voice."""
+    return (b'PKX1SLAB' + struct.pack('<I', 160) + b''.join(pack(v) for v in voices)
+            + b'VMAP' + struct.pack('<IH', 2, engines))
 
 
 class TestSynthLabPage(unittest.TestCase):
@@ -428,6 +431,23 @@ class TestSynthLabPage(unittest.TestCase):
         buf = r.sym.g['json_buf']
         self.assertEqual(r.e.call(r.cave['pk_sy_kit_save'], 2, 5, buf, 512, max_insns=5_000_000), 160)
         self.assertEqual(unpack(bytes(r.e.uc.mem_read(buf, 40))), preset(9))
+        self.assertEqual(r.e.uc.mem_read(buf + 39, 1)[0] & 0x80, 0, 'the saved flag stays in the slot')
+
+    def test_only_the_voices_running_synth_lab_keep_their_sounds(self):
+        """The kit slots: voice 4 runs Synth Lab in kit 6, the others stock engines (an older
+        file has all four voices' sounds): only voice 4's count."""
+        rec = record([preset(9)] * 4, engines=0x4210)
+        r = self.rig(sd={'BANKS/02/KITS/05.KIX': rec, 'BANKS/02/00.PAT': b''})
+        r.e.call(r.cave['pk4_store_bank_load'], 2, max_insns=900_000_000)
+        r.e.sent(2)
+        r.e.call(r.cave['pk_sy_kit_load'], 5, max_insns=50_000_000)
+        want = DEFAULTS[:3] + [preset(9)]
+        self.assertEqual([x for _, _, x in self.sent(r)][:4], want)
+        buf = r.sym.g['json_buf']
+        self.assertEqual(r.e.call(r.cave['pk_sy_kit_save'], 2, 5, buf, 512, max_insns=5_000_000), 160)
+        self.assertEqual([unpack(bytes(r.e.uc.mem_read(buf + 40 * v, 40))) for v in range(4)], want)
+        self.assertEqual(r.e.call(r.cave['pk_sy_kit_save'], 2, 6, buf, 512, max_insns=5_000_000), 0,
+                         'kit 7: no voice runs Synth Lab, no record')
 
 
 if __name__ == '__main__':

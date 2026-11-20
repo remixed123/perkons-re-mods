@@ -19,6 +19,7 @@ from ak_rig import AkordsCase, DRONE, HAVE_GCC, MSG_AKORDS_SOUND, MSG_VOICE_MAP,
 KIT, MOD, SHIFT = 0x41, 0x43, 0x47
 KIT_MODE, AKORDS_PAGE, ENGINES_PAGE = 5, 17, 18
 COL = 4                                 # Akords' column (engine 5)
+AKORDS_ALL = 0x4444                     # a kit's engines (VMAP): Akords on every voice
 PARAM1, PARAM2 = 1, 5                   # the knobs' slots
 MODE_SW, ALGO_SW = 1, 2                  # the switch events (track * 3 + these)
 KEPT, KEPT_MODE, KEPT_CUT_OWN = 0x08, 0x10, 0x20    # the record's flags
@@ -115,7 +116,10 @@ class TestM4FollowsTheSound(unittest.TestCase):
         self.loop(r)
 
     def record(self, r):
+        """Kit 1 saved as the host saves it: the engines first (VMAP: the kit slots follow
+        them), then Akords' record."""
         buf = r.sym.g['json_buf']
+        r.e.call(r.cave['pk_vm_kit_save'], 0, 0, buf, 128, max_insns=5_000_000)
         n = r.e.call(r.cave['pk_ak_kit_save'], 0, 0, buf, 128, max_insns=5_000_000)
         return bytes(r.e.uc.mem_read(buf, n))
 
@@ -124,8 +128,8 @@ class TestM4FollowsTheSound(unittest.TestCase):
 
     def reload(self, r, rec, kit=5):
         """A bank holding `rec` as kit `kit`'s record, with `r`'s knobs: kit `kit` loaded."""
-        r2 = self.rig(sd={f'BANKS/02/KITS/{kit:02d}.KIX': b'PKX1AKRD' + struct.pack('<I', len(rec)) + rec,
-                          'BANKS/02/00.PAT': b''})
+        kix = b'PKX1AKRD' + struct.pack('<I', len(rec)) + rec + b'VMAP' + struct.pack('<IH', 2, AKORDS_ALL)
+        r2 = self.rig(sd={f'BANKS/02/KITS/{kit:02d}.KIX': kix, 'BANKS/02/00.PAT': b''})
         r2.e.call(r2.cave['pk4_store_bank_load'], 2, max_insns=900_000_000)
         return r2
 
@@ -227,7 +231,10 @@ class TestM4FollowsTheSound(unittest.TestCase):
         m = self.load(r)
         self.assertTrue(m[0] & HOLD)
         self.assertEqual(self.sounds(r), [])
-        r.ms += 25                              # stopped: the kit's values play at once
+        r.ms += 1                               # the kit's voices start running Akords: once
+        r.e.call(r.cave['pk_ak_main_loop'], max_insns=5_000_000)
+        self.sounds(r)
+        r.ms += 24                              # stopped: the kit's values play at once
         r.e.call(r.cave['pk_ak_main_loop'], max_insns=5_000_000)
         s = self.sounds(r)
         self.assertEqual(len(s), 1, 'let go')

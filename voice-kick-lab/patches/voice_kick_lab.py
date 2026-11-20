@@ -26,7 +26,8 @@ def apply(p, arg=None):
     if NAME in vm['engines']:
         raise PatchError(f'voice-map engine name {NAME} already taken')
     vm['engines'][NAME] = {'sources': [os.path.join(SRC, 'kick_lab.c')], 'include_dirs': [SRC],
-                           'build': 'pk_kl_build', 'slot': int(arg) if arg else None, 'page': 'kick_lab'}
+                           'build': 'pk_kl_build', 'slot': int(arg) if arg else None, 'page': 'kick_lab',
+                           'kit_bytes': 7}     # a voice's kit slot: saved flag + 6 bytes (kick_lab_m4.c)
     # M7: each voice's settings (preset, page, PARAM2's values), in order with the triggers
     m7host.host(p).message('kick-lab', 'pk_kl_on_settings', ordered=True)
     # M7: the tempo, for the delay's sync

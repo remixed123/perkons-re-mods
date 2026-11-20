@@ -118,14 +118,15 @@
        "remixed123/perkons-re-mods:voice-3-oh/src/m4/three_oh_m4.c:.bss.hold_matched": 4,
        "remixed123/perkons-re-mods:voice-3-oh/src/m4/three_oh_m4.c:.bss.hold_from": 4,
        "remixed123/perkons-re-mods:voice-3-oh/src/m4/three_oh_m4.c:.bss.rng": 4,
-       "remixed123/perkons-re-mods:voice-3-oh/src/m4/three_oh_m4.c:.bss.kit_ok": 8,
        "remixed123/perkons-re-mods:voice-3-oh/src/m4/three_oh_m4.c:.bss.ready": 4,
        "remixed123/perkons-re-mods:voice-3-oh/src/m4/three_oh_m4.c:.bss.editing": 4,
        "remixed123/perkons-re-mods:voice-3-oh/src/m4/three_oh_m4.c:.bss.pending": 4,
        "remixed123/perkons-re-mods:voice-3-oh/src/m4/three_oh_m4.c:.bss.undo": 68,
        "remixed123/perkons-re-mods:voice-3-oh/src/m4/three_oh_m4.c:.bss.fol": 24,
-       "remixed123/perkons-re-mods:voice-3-oh/src/m4/three_oh_m4.c:.bss.oh_cur": 44,
-       "remixed123/perkons-re-mods:voice-3-oh/src/m4/three_oh_m4.c:.bss.kit_snd": 2816
+       "remixed123/perkons-re-mods:voice-3-oh/src/m4/three_oh_m4.c:.bss.oh_cur": 44
+      },
+      "store": {
+       "src/m4/voicemap/voice_map_m4.c:.pk_axi.kit_slots": 3072
       }
      },
      "takeovers": {},
@@ -170,7 +171,8 @@
        "remixed123/perkons-re-mods:voice-akords/src/m7/akords.c:.bss.patch": 64,
        "remixed123/perkons-re-mods:voice-akords/src/m7/akords.c:.bss.sound": 16,
        "remixed123/perkons-re-mods:voice-akords/src/m7/akords.c:.bss.waiting": 4,
-       "remixed123/perkons-re-mods:voice-akords/src/m7/akords.c:.bss.settings": 16
+       "remixed123/perkons-re-mods:voice-akords/src/m7/akords.c:.bss.settings": 16,
+       "src/m7/voicemap/voice_map.c:.bss.pending": 7
       },
       "main": {
        "remixed123/perkons-re-mods:voice-akords/src/m4/akords_m4.c:.bss.prog_pattern": 4,
@@ -196,8 +198,10 @@
        "remixed123/perkons-re-mods:voice-akords/src/m4/akords_m4.c:.bss.holding": 4,
        "remixed123/perkons-re-mods:voice-akords/src/m4/akords_m4.c:.bss.hold_matched": 4,
        "remixed123/perkons-re-mods:voice-akords/src/m4/akords_m4.c:.bss.hold_from": 4,
-       "remixed123/perkons-re-mods:voice-akords/src/m4/akords_m4.c:.bss.snd": 32,
-       "remixed123/perkons-re-mods:voice-akords/src/m4/akords_m4.c:.bss.kit_set": 5888
+       "remixed123/perkons-re-mods:voice-akords/src/m4/akords_m4.c:.bss.snd": 32
+      },
+      "store": {
+       "src/m4/voicemap/voice_map_m4.c:.pk_axi.kit_slots": 6144
       }
      },
      "takeovers": {},
@@ -241,12 +245,13 @@
        "remixed123/perkons-re-mods:voice-kick-lab/src/m4/kick_lab_m4.c:.bss.holding": 4,
        "remixed123/perkons-re-mods:voice-kick-lab/src/m4/kick_lab_m4.c:.bss.hold_matched": 4,
        "remixed123/perkons-re-mods:voice-kick-lab/src/m4/kick_lab_m4.c:.bss.hold_from": 4,
-       "remixed123/perkons-re-mods:voice-kick-lab/src/m4/kick_lab_m4.c:.bss.kit_ok": 8,
        "remixed123/perkons-re-mods:voice-kick-lab/src/m4/kick_lab_m4.c:.bss.ready": 4,
        "remixed123/perkons-re-mods:voice-kick-lab/src/m4/kick_lab_m4.c:.bss.editing": 4,
        "remixed123/perkons-re-mods:voice-kick-lab/src/m4/kick_lab_m4.c:.bss.fol": 24,
-       "remixed123/perkons-re-mods:voice-kick-lab/src/m4/kick_lab_m4.c:.bss.cur": 24,
-       "remixed123/perkons-re-mods:voice-kick-lab/src/m4/kick_lab_m4.c:.bss.kit_set": 1536
+       "remixed123/perkons-re-mods:voice-kick-lab/src/m4/kick_lab_m4.c:.bss.cur": 24
+      },
+      "store": {
+       "src/m4/voicemap/voice_map_m4.c:.pk_axi.kit_slots": 2048
       }
      },
      "takeovers": {},
@@ -327,15 +332,16 @@
        "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:.bss.hold_matched": 4,
        "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:.bss.hold_from": 4,
        "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:.bss.rng": 4,
-       "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:.bss.kit_ok": 8,
        "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:.bss.active": 4,
        "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:.bss.ready": 4,
        "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:.bss.editing": 4,
        "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:.bss.undo_ok": 4,
        "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:.bss.fol": 24,
        "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:.bss.undo": 160,
-       "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:.bss.sy_cur": 160,
-       "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:.bss.kit_snd": 10240
+       "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:.bss.sy_cur": 160
+      },
+      "store": {
+       "src/m4/voicemap/voice_map_m4.c:.pk_axi.kit_slots": 10240
       }
      },
      "takeovers": {},
