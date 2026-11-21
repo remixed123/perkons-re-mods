@@ -27,6 +27,9 @@
    "memory": {
     "v1.3.0": {
      "ram": {
+      "m4code": {
+       "remixed123/perkons-re-mods:engine-shortcut/src/m4/engine_shortcut.c:code": 201
+      },
       "main": {
        "remixed123/perkons-re-mods:engine-shortcut/src/m4/engine_shortcut.c:.bss.eat": 4
       }
@@ -89,6 +92,12 @@
        "remixed123/perkons-re-mods:fx-sidechain/src/m7/sidechain.c:.bss.orig": 16,
        "remixed123/perkons-re-mods:fx-sidechain/src/m7/sidechain.c:.bss.vt": 64
       },
+      "m7code": {
+       "remixed123/perkons-re-mods:fx-sidechain/src/m7/sidechain.c:code": 1028
+      },
+      "m4code": {
+       "remixed123/perkons-re-mods:fx-sidechain/src/m4/sidechain_m4.c:code": 1071
+      },
       "main": {
        "remixed123/perkons-re-mods:fx-sidechain/src/m4/sidechain_m4.c:.bss.dirty": 4,
        "remixed123/perkons-re-mods:fx-sidechain/src/m4/sidechain_m4.c:.bss.sync_at": 4,
@@ -137,6 +146,12 @@
        "remixed123/perkons-re-mods:voice-3-oh/src/m7/three_oh.c:.bss.stash": 52,
        "remixed123/perkons-re-mods:voice-3-oh/src/m7/three_oh.c:.bss.drive": 4,
        "remixed123/perkons-re-mods:voice-3-oh/src/m7/three_oh.c:.bss.bpm": 4
+      },
+      "m7code": {
+       "remixed123/perkons-re-mods:voice-3-oh/src/m7/three_oh.c:code": 7744
+      },
+      "m4code": {
+       "remixed123/perkons-re-mods:voice-3-oh/src/m4/three_oh_m4.c:code": 5827
       },
       "main": {
        "remixed123/perkons-re-mods:voice-3-oh/src/m4/three_oh_m4.c:.bss.dirty": 4,
@@ -205,6 +220,12 @@
        "remixed123/perkons-re-mods:voice-akords/src/m7/akords.c:.bss.waiting": 4,
        "remixed123/perkons-re-mods:voice-akords/src/m7/akords.c:.bss.settings": 16
       },
+      "m7code": {
+       "remixed123/perkons-re-mods:voice-akords/src/m7/akords.c:code": 16972
+      },
+      "m4code": {
+       "remixed123/perkons-re-mods:voice-akords/src/m4/akords_m4.c:code": 10455
+      },
       "main": {
        "remixed123/perkons-re-mods:voice-akords/src/m4/akords_m4.c:.bss.prog_pattern": 4,
        "remixed123/perkons-re-mods:voice-akords/src/m4/akords_m4.c:.bss.prog_playing": 4,
@@ -266,6 +287,12 @@
        "remixed123/perkons-re-mods:voice-kick-lab/src/m7/kick_lab.c:.bss.bpm": 4,
        "remixed123/perkons-re-mods:voice-kick-lab/src/m7/kick_lab.c:.bss.pending": 4,
        "remixed123/perkons-re-mods:voice-kick-lab/src/m7/kick_lab.c:.bss.sets": 24
+      },
+      "m7code": {
+       "remixed123/perkons-re-mods:voice-kick-lab/src/m7/kick_lab.c:code": 10684
+      },
+      "m4code": {
+       "remixed123/perkons-re-mods:voice-kick-lab/src/m4/kick_lab_m4.c:code": 2139
       },
       "main": {
        "remixed123/perkons-re-mods:voice-kick-lab/src/m4/kick_lab_m4.c:.bss.tempo_at": 4,
@@ -341,6 +368,12 @@
        "remixed123/perkons-re-mods:voice-synth-lab/src/m7/synth_lab.c:.bss.stash": 164,
        "remixed123/perkons-re-mods:voice-synth-lab/src/m7/synth_lab.c:.bss.drive": 4,
        "remixed123/perkons-re-mods:voice-synth-lab/src/m7/synth_lab.c:.bss.bpm": 4
+      },
+      "m7code": {
+       "remixed123/perkons-re-mods:voice-synth-lab/src/m7/synth_lab.c:code": 23556
+      },
+      "m4code": {
+       "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:code": 10951
       },
       "main": {
        "remixed123/perkons-re-mods:voice-synth-lab/src/m4/synth_lab_m4.c:.bss.dirty": 4,
