@@ -30,6 +30,7 @@ on your computer.
 | **voice-synth-lab** | SYNTH LAB: a mono synth voice, from classic analog sounds to mangled, modulated, multi-layered soundscapes; three oscillators with hard sync, a wavefolder, eight LFOs, 16 presets and 5 starters, Random, Tweak and Mutate | [voice-synth-lab/README.md](voice-synth-lab/README.md) |
 | **voice-3-oh** | 3 OH: an acid bass line voice; a diode ladder filter with accents and slides, four distortions, 16 presets, and a line generator that writes acid lines into the voice's track | [voice-3-oh/README.md](voice-3-oh/README.md) |
 | **voice-step-sampler** | STEP SAMPLER: 64 samples per bank, any length, streamed from the card, each step its own; attack / start / slice, forward / choke / reverse | [voice-step-sampler/README.md](voice-step-sampler/README.md) |
+| **engine-shortcut** | ENGINE SHORTCUT: hold SHUFFLE and press a trigger key to open that voice's engine configuration page, without playing the voice | [engine-shortcut/README.md](engine-shortcut/README.md) |
 | **fx-reverb** | a reverb in place of the BBD delay, switched in the config menu | [fx-reverb/README.md](fx-reverb/README.md) |
 | **fx-freeze** | the FX section's 2-way switch as freeze: loops the delay, or holds the reverb | [fx-freeze/README.md](fx-freeze/README.md) |
 | **fx-sidechain** | the master voice's triggers duck the other three voices; depth, attack, hold and release on the step rows | [fx-sidechain/README.md](fx-sidechain/README.md) |

@@ -4,6 +4,39 @@
  "description": "Akords, a chord synth voice, Kick Lab, a kick drum synth voice, Synth Lab, a mono synth voice, 3 Oh, an acid bass line voice, and FX Sidechain, kick-style pumping, for the Perkons HD-01",
  "mods": [
   {
+   "id": "engine-shortcut",
+   "dir": "engine-shortcut",
+   "title": "ENGINE SHORTCUT",
+   "summary": "HOLD SHUFFLE AND PRESS A TRIGGER KEY TO OPEN THAT VOICE'S ENGINE SETTINGS PAGE. THE VOICE DOESN'T PLAY.",
+   "readme": "engine-shortcut/README.md",
+   "patches": [
+    "engine_shortcut"
+   ],
+   "code": "es",
+   "kind": "mod",
+   "requires": [],
+   "conflicts": [],
+   "target": "1.3.0",
+   "controls": [
+    {
+     "combo": "SHUFFLE + TRIGGER",
+     "page": "MAIN",
+     "does": "OPENS THAT VOICE'S ENGINE SETTINGS PAGE (THE VOICE DOESN'T PLAY)"
+    }
+   ],
+   "memory": {
+    "v1.3.0": {
+     "ram": {
+      "main": {
+       "remixed123/perkons-re-mods:engine-shortcut/src/m4/engine_shortcut.c:.bss.eat": 4
+      }
+     },
+     "takeovers": {},
+     "borrows": {}
+    }
+   }
+  },
+  {
    "id": "fx-sidechain",
    "dir": "fx-sidechain",
    "title": "FX SIDECHAIN",

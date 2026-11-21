@@ -1,0 +1,20 @@
+{
+  "options": [
+    {
+      "id": "engine-shortcut",
+      "title": "ENGINE SHORTCUT",
+      "summary": "HOLD SHUFFLE AND PRESS A TRIGGER KEY TO OPEN THAT VOICE'S ENGINE SETTINGS PAGE. THE VOICE DOESN'T PLAY.",
+      "patches": [
+        "engine_shortcut"
+      ],
+      "code": "es",
+      "controls": [
+        {
+          "combo": "SHUFFLE + TRIGGER",
+          "page": "MAIN",
+          "does": "OPENS THAT VOICE'S ENGINE SETTINGS PAGE (THE VOICE DOESN'T PLAY)"
+        }
+      ]
+    }
+  ]
+}
