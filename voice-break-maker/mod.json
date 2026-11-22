@@ -1,0 +1,31 @@
+{
+  "options": [
+    {
+      "id": "voice-break-maker",
+      "title": "BREAK MAKER",
+      "summary": "A DRUM BREAK FROM THE SD CARD AS A RUNNING LOOP, LOCKED TO THE SEQUENCER: STEPS JUMP TO SLICES, ROLL AND REVERSE, PADS MANGLE IT LIVE, AND A GENERATOR WRITES NEW PATTERNS.",
+      "patches": [
+        "voice_break_maker"
+      ],
+      "code": "bm",
+      "kind": "voice",
+      "controls": [
+        {
+          "combo": "STEP",
+          "page": "BREAK MAKER",
+          "does": "ROW 1 BREAK; ROW 2 PADS (WHILE HELD), STEP TYPES; ROW 3 SLICES; ROW 4 CHARACTER, PITCH MODE, NEW PATTERN, KEEP RHYTHM, VARY, CLEAR"
+        },
+        {
+          "combo": "STEP (HOLD 0.5 S)",
+          "page": "BREAK MAKER",
+          "does": "ON NEW PATTERN, KEEP RHYTHM, VARY OR CLEAR: UNDOES THE LAST ONE"
+        },
+        {
+          "combo": "STEP + SHUFFLE",
+          "page": "MAIN",
+          "does": "ON BREAK MAKER TRACKS: OPENS ITS PAGE FOR THE HELD STEPS (THEIR SLICE AND STEP TYPE)"
+        }
+      ]
+    }
+  ]
+}

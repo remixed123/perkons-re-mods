@@ -260,6 +260,96 @@
    }
   },
   {
+   "id": "voice-break-maker",
+   "dir": "voice-break-maker",
+   "title": "BREAK MAKER",
+   "summary": "A DRUM BREAK FROM THE SD CARD AS A RUNNING LOOP, LOCKED TO THE SEQUENCER: STEPS JUMP TO SLICES, ROLL AND REVERSE, PADS MANGLE IT LIVE, AND A GENERATOR WRITES NEW PATTERNS.",
+   "readme": "voice-break-maker/README.md",
+   "patches": [
+    "voice_break_maker"
+   ],
+   "code": "bm",
+   "kind": "voice",
+   "requires": [],
+   "conflicts": [],
+   "target": "1.3.0",
+   "controls": [
+    {
+     "combo": "STEP",
+     "page": "BREAK MAKER",
+     "does": "ROW 1 BREAK; ROW 2 PADS (WHILE HELD), STEP TYPES; ROW 3 SLICES; ROW 4 CHARACTER, PITCH MODE, NEW PATTERN, KEEP RHYTHM, VARY, CLEAR"
+    },
+    {
+     "combo": "STEP (HOLD 0.5 S)",
+     "page": "BREAK MAKER",
+     "does": "ON NEW PATTERN, KEEP RHYTHM, VARY OR CLEAR: UNDOES THE LAST ONE"
+    },
+    {
+     "combo": "STEP + SHUFFLE",
+     "page": "MAIN",
+     "does": "ON BREAK MAKER TRACKS: OPENS ITS PAGE FOR THE HELD STEPS (THEIR SLICE AND STEP TYPE)"
+    }
+   ],
+   "memory": {
+    "v1.3.0": {
+     "ram": {
+      "voice": {
+       "remixed123/perkons-re-mods:voice-break-maker/src/m7/break_maker.c:.bss.set_pads": 8,
+       "remixed123/perkons-re-mods:voice-break-maker/src/m7/break_maker.c:.bss.set_aud": 4,
+       "remixed123/perkons-re-mods:voice-break-maker/src/m7/break_maker.c:.bss.set_char": 4,
+       "remixed123/perkons-re-mods:voice-break-maker/src/m7/break_maker.c:.bss.set_flags": 4,
+       "remixed123/perkons-re-mods:voice-break-maker/src/m7/break_maker.c:.bss.steps_in": 64
+      },
+      "m7code": {
+       "remixed123/perkons-re-mods:voice-break-maker/src/m7/break_maker.c:code": 4796
+      },
+      "m4code": {
+       "remixed123/perkons-re-mods:voice-break-maker/src/m4/break_maker_m4.c:code": 7676
+      },
+      "main": {
+       "remixed123/perkons-re-mods:voice-break-maker/src/m4/break_maker_m4.c:.bss.swallow_shuffle": 4,
+       "remixed123/perkons-re-mods:voice-break-maker/src/m4/break_maker_m4.c:.bss.undo": 92,
+       "remixed123/perkons-re-mods:voice-break-maker/src/m4/break_maker_m4.c:.bss.rng": 4,
+       "remixed123/perkons-re-mods:voice-break-maker/src/m4/break_maker_m4.c:.bss.pending": 4,
+       "remixed123/perkons-re-mods:voice-break-maker/src/m4/break_maker_m4.c:.bss.act_done": 4,
+       "remixed123/perkons-re-mods:voice-break-maker/src/m4/break_maker_m4.c:.bss.act_at": 4,
+       "remixed123/perkons-re-mods:voice-break-maker/src/m4/break_maker_m4.c:.bss.act_key": 4,
+       "remixed123/perkons-re-mods:voice-break-maker/src/m4/break_maker_m4.c:.bss.bm_held": 8,
+       "remixed123/perkons-re-mods:voice-break-maker/src/m4/break_maker_m4.c:.bss.editing": 4,
+       "remixed123/perkons-re-mods:voice-break-maker/src/m4/break_maker_m4.c:.bss.sent_play": 4,
+       "remixed123/perkons-re-mods:voice-break-maker/src/m4/break_maker_m4.c:.bss.last_step": 4,
+       "remixed123/perkons-re-mods:voice-break-maker/src/m4/break_maker_m4.c:.bss.cue": 64,
+       "remixed123/perkons-re-mods:voice-break-maker/src/m4/break_maker_m4.c:.bss.failed": 4,
+       "remixed123/perkons-re-mods:voice-break-maker/src/m4/break_maker_m4.c:.bss.loaded": 4,
+       "remixed123/perkons-re-mods:voice-break-maker/src/m4/break_maker_m4.c:.bss.l_ncue": 4,
+       "remixed123/perkons-re-mods:voice-break-maker/src/m4/break_maker_m4.c:.bss.l_rate": 4,
+       "remixed123/perkons-re-mods:voice-break-maker/src/m4/break_maker_m4.c:.bss.l_done": 4,
+       "remixed123/perkons-re-mods:voice-break-maker/src/m4/break_maker_m4.c:.bss.l_frames": 4,
+       "remixed123/perkons-re-mods:voice-break-maker/src/m4/break_maker_m4.c:.bss.l_data": 4,
+       "remixed123/perkons-re-mods:voice-break-maker/src/m4/break_maker_m4.c:.bss.l_at": 4,
+       "remixed123/perkons-re-mods:voice-break-maker/src/m4/break_maker_m4.c:.bss.l_number": 4,
+       "remixed123/perkons-re-mods:voice-break-maker/src/m4/break_maker_m4.c:.bss.lstate": 4,
+       "remixed123/perkons-re-mods:voice-break-maker/src/m4/break_maker_m4.c:.bss.avail_bank": 4,
+       "remixed123/perkons-re-mods:voice-break-maker/src/m4/break_maker_m4.c:.bss.avail": 4,
+       "remixed123/perkons-re-mods:voice-break-maker/src/m4/break_maker_m4.c:.bss.bank_now": 4,
+       "remixed123/perkons-re-mods:voice-break-maker/src/m4/break_maker_m4.c:.bss.dirty": 4,
+       "remixed123/perkons-re-mods:voice-break-maker/src/m4/break_maker_m4.c:.bss.bm_aud": 4,
+       "remixed123/perkons-re-mods:voice-break-maker/src/m4/break_maker_m4.c:.bss.bm_pads": 8,
+       "remixed123/perkons-re-mods:voice-break-maker/src/m4/break_maker_m4.c:.bss.bm_cur": 8,
+       "remixed123/perkons-re-mods:voice-break-maker/src/m4/break_maker_m4.c:.bss.kit_ok": 8,
+       "remixed123/perkons-re-mods:voice-break-maker/src/m4/break_maker_m4.c:.bss.bm_kit_rec": 512
+      }
+     },
+     "takeovers": {
+      "store": {
+       "default custom samples": "voice-break-maker"
+      }
+     },
+     "borrows": {}
+    }
+   }
+  },
+  {
    "id": "voice-kick-lab",
    "dir": "voice-kick-lab",
    "title": "KICK LAB",
