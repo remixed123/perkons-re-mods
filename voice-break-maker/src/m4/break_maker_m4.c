@@ -57,7 +57,7 @@ static uint8_t bm_aud[4] WORDS;                    /* each voice's audition byte
 static uint32_t dirty;                          /* voices (bits) whose settings go to the M7 */
 static uint32_t bank_now, avail, avail_bank;    /* breaks on the card (bits), for which bank (+ 1) */
 /* the loader */
-static uint32_t lstate, l_number, l_at, l_data, l_frames, l_done, l_rate, l_ncue;
+static uint32_t lstate, l_number, l_at, l_data, l_frames, l_done, l_rate, l_ncue, l_bars;
 static int32_t loaded, failed;                  /* the break in RAM / the one that failed: number + 256 x bank + 1, 0 none */
 static uint32_t cue[16];
 /* steps */
@@ -284,6 +284,21 @@ static int open_break(int n)
     uint32_t room = (BM_PCM_BYTES - 4u) / 2u;
     if (!pcm || !data || frames < 1024)
         return -1;
+    /* how many bars: 1, 2 or 4, whichever puts the break's own tempo nearest the Pērkons's now
+     * (a 4 s loop at 120 BPM is 2 bars at 120, not 1 at 60); the first bar is played */
+    float tempo = FW_CLOCK_BPM, secs = (float)frames / (float)rate, best = 1e9f;
+    if (!(tempo >= 30.0f && tempo <= 300.0f))
+        tempo = 120.0f;
+    l_bars = 1;
+    for (uint32_t n = 1; n <= 4; n <<= 1) {
+        float r = 240.0f * (float)n / secs / tempo;     /* its tempo as n bars, over the Pērkons's */
+        float d = r >= 1.0f ? r : 1.0f / r;
+        if (d < best) {
+            best = d;
+            l_bars = n;
+        }
+    }
+    frames /= l_bars;
     l_frames = frames < room ? frames : room;
     l_data = data;
     l_rate = rate;
@@ -491,6 +506,7 @@ static void load_step(void)
     find_slices();
     sort_slices();
     BM->number = (uint8_t)l_number;
+    BM->bars = (uint8_t)l_bars;
     BM->gen++;
     dmb();
     BM->ready = 1;

@@ -38,7 +38,8 @@ typedef struct {
     uint32_t slice[BM_SLICES + 1];  /* frame where each slice starts; slice[16] = frames */
     uint8_t type[BM_SLICES];        /* BM_T_* */
     uint8_t number;                 /* the break loaded, 0-15 (BREAKS/<number + 1>.wav) */
-    uint8_t pad[3];
+    uint8_t bars;                   /* how many bars the file is (1, 2, 4): its first one is played */
+    uint8_t pad[2];
 } bm_ctrl_t;
 
 _Static_assert(sizeof(bm_ctrl_t) <= BM_CTRL_SIZE, "control fits");

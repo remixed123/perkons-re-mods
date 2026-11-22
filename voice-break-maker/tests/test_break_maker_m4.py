@@ -42,6 +42,14 @@ def ctrl(r):
     return head, sl, list(b[92:108]), b[108]
 
 
+def bars(r):
+    return r.e.r8(BM_BASE + 109)
+
+
+def set_tempo(r, bpm):
+    r.e.uc.mem_write(r.sym.g['clock_state'] + 0x14, struct.pack('<f', bpm))
+
+
 class TestBreakMakerM4(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -122,11 +130,32 @@ class TestBreakMakerM4(unittest.TestCase):
             self.assertEqual(self.load(r)[0][1], 0, name)
 
     def test_a_break_too_long_is_cut_to_the_room(self):
-        long_ = self.drums * 3          # 5.1 s at 44.1 kHz
+        long_, _, _ = drum_break(bpm=50.0)          # one bar at 50 BPM: 4.8 s at 44.1 kHz
         r = self.rig({'BREAKS/1.wav': wav(long_)})
+        set_tempo(r, 50.0)
         (_, ready, _, frames, _, _), _, _, _ = self.load(r, passes=40)
-        self.assertEqual(ready, 1)
+        self.assertEqual((ready, bars(r)), (1, 1))
         self.assertEqual(frames, (0x24080000 - 0x400 - (BM_BASE + 0x100) - 4) // 2)
+
+    def test_a_longer_loop_plays_its_first_bar(self):
+        for n, bpm in ((2, 120.0), (4, 100.0)):
+            one, _, hits = drum_break(bpm=bpm)
+            r = self.rig({'BREAKS/1.wav': wav(one * n)})
+            set_tempo(r, bpm)
+            (_, ready, _, frames, _, pcm), sl, types, _ = self.load(r, passes=40)
+            self.assertEqual((ready, bars(r), frames), (1, n, len(one)), n)
+            for i in range(1, 16):
+                self.assertLess(abs(sl[i] - hits[i]), 48, (n, i))
+            self.assertEqual(types, self.kinds, n)
+
+    def test_the_tempo_decides_a_loop_that_could_be_either(self):
+        """2 bars at 175 BPM is also 1 bar at 87.5: the Pērkons's tempo when it loads decides."""
+        one, _, _ = drum_break(bpm=175.0)
+        for tempo, n in ((90.0, 1), (120.0, 1), (170.0, 2)):
+            r = self.rig({'BREAKS/1.wav': wav(one * 2)})
+            set_tempo(r, tempo)
+            self.load(r, passes=40)
+            self.assertEqual(bars(r), n, tempo)
 
     def test_the_page_chooses_the_break(self):
         r = self.rig({'BREAKS/1.wav': wav(self.drums), 'BREAKS/2.wav': wav(self.tones, cues=self.starts)})

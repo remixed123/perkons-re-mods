@@ -41,11 +41,16 @@ the stock sampler (voice 4, ALGO 3) plays its factory closed hat, open hat and r
 Put up to 16 breaks on the card as `BREAKS/1.wav` to `BREAKS/16.wav`. A bank can have its own:
 `BANKS/NN/BREAKS/n.wav` is used before `BREAKS/n.wav` (bank 1 is `BANKS/00`).
 
-* **One bar** each, cut exactly at the bar's start and end. BREAK MAKER plays the whole file as
-  one bar of 16 steps, so its tempo doesn't matter: it's played at the Pērkons's tempo.
+* **Loops of 1, 2 or 4 bars**, cut exactly at the start and end. BREAK MAKER plays the **first
+  bar**, as 16 steps, at the Pērkons's tempo (its own tempo doesn't matter).
+* **How many bars** it works out when the break loads: whichever makes the loop's own tempo
+  closest to the Pērkons's tempo then. A 4-second loop at 120 BPM is 2 bars, not 1 bar at 60.
+  A loop that could be either (2 bars at 175 BPM is also 1 bar at 87.5) goes by the tempo set:
+  set the Pērkons near the loop's tempo before choosing it.
 * **WAV, mono, 16-bit**, 44.1 kHz (other rates play too). Stereo, 24-bit or other files are
   ignored.
-* **Up to about 4.4 seconds** at 44.1 kHz (one bar down to about 54 BPM). Anything longer is cut.
+* **The bar played can be up to about 4.4 seconds** at 44.1 kHz (down to about 54 BPM). Anything
+  longer is cut.
 * **Slices:** if the WAV has exactly 16 cue points (most audio editors can add markers that save
   as cue points), those are the slices. Otherwise BREAK MAKER cuts the bar in 16 and moves each
   cut onto the nearest drum hit, so each slice starts on its hit.
