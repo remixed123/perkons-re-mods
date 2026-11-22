@@ -1,12 +1,12 @@
 # BREAK MAKER USER GUIDE
 
 **BREAK MAKER** turns any of the Pērkons's four voices into a **drum break player**: a one-bar
-break from the SD card, cut into 16 slices on the 16 steps, playing as a running loop locked to
-the sequencer. You chop it by programming the steps where it should jump, mangle it live with
+break from the SD card, cut into slices on the drum hits (16, 8 or 4 of them, or one per hit),
+playing as a running loop locked to the sequencer. You chop it by programming the steps where it should jump, mangle it live with
 **pads**, and let a **generator** write new patterns from it.
 
-* **A running loop, not a sampler.** Press PLAY and the break plays, slice 1 on step 1 to slice
-  16 on step 16, at whatever tempo: it always fits the bar. Steps without a trigger keep it
+* **A running loop, not a sampler.** Press PLAY and the break plays across the 16 steps at
+  whatever tempo: it always fits the bar. Steps without a trigger keep it
   running.
 * **A trigger is a jump.** A step with a trigger plays the slice you lock on it (PARAM2) and the
   break carries on from there, the classic jungle chop. The loop's first step puts it back in
@@ -51,9 +51,8 @@ Put up to 16 breaks on the card as `BREAKS/1.wav` to `BREAKS/16.wav`. A bank can
   ignored.
 * **The bar played can be up to about 4.4 seconds** at 44.1 kHz (down to about 54 BPM). Anything
   longer is cut.
-* **Slices:** if the WAV has exactly 16 cue points (most audio editors can add markers that save
-  as cue points), those are the slices. Otherwise BREAK MAKER cuts the bar in 16 and moves each
-  cut onto the nearest drum hit, so each slice starts on its hit.
+* **Slices:** see [the cut](#the-cut). If the WAV has exactly 16 cue points (most audio editors
+  can add markers that save as cue points), those are used for 16, 8 and 4 slices.
 * **The break loads when a voice plays BREAK MAKER** (not when the Pērkons starts, so start-up
   stays quick), and again when you choose another one. Loading takes a moment, during which the
   voice is silent.
@@ -81,11 +80,29 @@ PLAY: the break plays. Open the configuration page, press **Jungle** (row 4, ste
 | **TUNE** | **Pitch** in semitones, up to an octave either way. At 12 o'clock the break plays as recorded (at the Pērkons's tempo). How pitch works (speed or keep length) is set on the page. A step's note transposes it too (MIDI note 36: no change) |
 | **DECAY** | **Gate**: how much of each step sounds, from a tight chop to all of it. At the top (from about 95%) there's no gate: the break runs on. In CHOP mode: how long each hit lasts, up to four steps, or until the next one at the top |
 | **PARAM1** | Its job depends on MODE (below). Lock it on steps to use it on just those steps |
-| **PARAM2** | **The slice a trigger plays.** Fully left: the step's own slice (the break in place); then 16 zones for slices 1 to 16. Lock it on a step (hold the step and turn it) to make that step jump |
+| **PARAM2** | **The slice a trigger plays.** Fully left: the slice where the step is, from that step (the break in place); then a zone for each slice. Lock it on a step (hold the step and turn it) to make that step jump |
 | **ALGO** | How the break plays (positions top to bottom):<br>1: **RUN**: the break loops; a trigger jumps and the break carries on from there<br>2: **GENERATE**: RUN, and the steps without a trigger may play other slices, a little different each bar, busier every fourth bar<br>3: **CHOP**: only triggers play, each its slice, silent after the gate |
 | **MODE** | PARAM1's job (positions top to bottom):<br>1: **ROLL**: off, then 2, 3, 4, 6 or 8 hits inside the step<br>2: **MANGLE**: how often a step plays a different slice (in GENERATE: how much it changes)<br>3: **STUTTER**: a short piece of the slice looped for the step, from half a step down to 1/32 |
 | velocity | **How the step plays** (see [step types](#step-types)); it doesn't set the level |
 | CUTOFF, filter switch, DRIVE, FX SEND, LEVEL | The Pērkons's analog stages, as on every voice |
+
+### The cut
+
+How many slices the bar is cut in, chosen on the page (row 4, step 11: each press the next) and
+saved with the kit. You can change it while the break plays: it's cut again at once.
+
+| cut | the slices | LED |
+|---|---|---|
+| **16** | a sixteenth each, one a step | bright |
+| **8** | an eighth each (2 steps): the classic Amen chop | medium |
+| **4** | a beat each (4 steps) | dim |
+| **Auto** | **one per drum hit**: each step with a hit starts a slice, which lasts until the next hit, however many steps that is | blinking |
+
+With 16, 8 and 4, each cut is moved onto the drum hit nearest it, so each slice starts on its hit
+even if the drummer was a little early or late. A slice starts on its own step and plays on
+through the steps it covers; a trigger inside a slice jumps from there. PARAM2's zones follow the
+cut (fewer slices, wider zones), so a locked step keeps about its place in the bar when you
+change it.
 
 ### Step types
 
@@ -119,9 +136,10 @@ page; **SHIFT**, **KIT** or **MOD** to the engine page.
 | 1 | 1-16 | **The break**: `BREAKS/1.wav` to `16.wav`. Dim: on the card; bright: the kit's |
 | 2 | 1-11 | **Pads**, while held: roll 1/8, roll 1/16, roll 1/32, reverse, freeze, half speed, tape stop, gate, random, filter throw, stutter |
 | 2 | 12-16 | **Step types** for the held steps: ghost, reverse, roll x2, roll x3, roll x4. The held steps' type is lit; press it again for plain. Reverse and roll x2 together: both |
-| 3 | 1-16 | **Slices**: with held steps, their slice (a lock on PARAM2); without, hear it. Brighter: the kicks and snares |
+| 3 | 1-16 | **Slices** (as many as the cut has): with held steps, their slice (a lock on PARAM2); without, hear it. Brighter: the kicks and snares |
 | 4 | 1-8 | **The generator's character**: Straight, Sparse, Boom bap, Halftime, Two-step, Jungle, Fills, Breakcore |
 | 4 | 9-10 | **Pitch**: speed (pitch and speed together, as a sampler) or keep length (pitch without changing the slices' length) |
+| 4 | 11 | **The cut**: each press the next, 16, 8, 4, Auto ([the cut](#the-cut)) |
 | 4 | 13-16 | **New pattern**, **Keep rhythm**, **Vary**, **Clear** (on release). **Hold** any of them for half a second to undo the last |
 
 ### The pads
@@ -168,7 +186,7 @@ by their position in the bar instead.
 
 ## Saving
 
-**Saved with the kit:** the break, and for each voice the generator's character and the pitch
+**Saved with the kit:** the break and its cut, and for each voice the generator's character and the pitch
 mode. **Saved with the pattern:** the steps, with their slices (PARAM2 locks) and step types
 (velocities), as any Pērkons pattern.
 

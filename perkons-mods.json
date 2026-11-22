@@ -301,13 +301,14 @@
        "remixed123/perkons-re-mods:voice-break-maker/src/m7/break_maker.c:.bss.steps_in": 64
       },
       "m7code": {
-       "remixed123/perkons-re-mods:voice-break-maker/src/m7/break_maker.c:code": 4796
+       "remixed123/perkons-re-mods:voice-break-maker/src/m7/break_maker.c:code": 5236
       },
       "m4code": {
-       "remixed123/perkons-re-mods:voice-break-maker/src/m4/break_maker_m4.c:code": 7884
+       "remixed123/perkons-re-mods:voice-break-maker/src/m4/break_maker_m4.c:code": 9100
       },
       "main": {
        "remixed123/perkons-re-mods:voice-break-maker/src/m4/break_maker_m4.c:.bss.swallow_shuffle": 4,
+       "remixed123/perkons-re-mods:voice-break-maker/src/m4/break_maker_m4.c:.bss.cues_ok": 4,
        "remixed123/perkons-re-mods:voice-break-maker/src/m4/break_maker_m4.c:.bss.undo": 92,
        "remixed123/perkons-re-mods:voice-break-maker/src/m4/break_maker_m4.c:.bss.rng": 4,
        "remixed123/perkons-re-mods:voice-break-maker/src/m4/break_maker_m4.c:.bss.pending": 4,

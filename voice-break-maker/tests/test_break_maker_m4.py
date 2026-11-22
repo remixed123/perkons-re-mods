@@ -11,7 +11,8 @@ from perkons import m7host
 from perkons.emu import Symbols
 from perkons.fwimage import Image
 from perkons.rig import M4Rig
-from bm_rig import (BM_BASE, GHOST, HAT, KICK, MAGIC, SNARE, VEL, drum_break, make_break, p2_of_slice, wav)
+from bm_rig import (BM_BASE, GHOST, HAT, KICK, MAGIC, SNARE, VEL, drum_break, make_break, p2_of_slice, p2_zone,
+                    wav)
 
 MAIN, KIT_MODE = 0, 5
 SHIFT, KIT, MOD, SHUFFLE = 0x47, 0x41, 0x43, 0x48
@@ -44,6 +45,12 @@ def ctrl(r):
 
 def bars(r):
     return r.e.r8(BM_BASE + 109)
+
+
+def cut(r):
+    """(how many slices, the step each starts on)."""
+    n = r.e.r8(BM_BASE + 110)
+    return n, list(bytes(r.e.uc.mem_read(BM_BASE + 112, n)))
 
 
 def set_tempo(r, bpm):
@@ -108,6 +115,70 @@ class TestBreakMakerM4(unittest.TestCase):
         r = self.rig()
         _, _, types, _ = self.load(r)
         self.assertEqual(types, self.kinds)
+
+    def cycle_cut(self, r, times=1):
+        self.open_page(r)
+        for _ in range(times):
+            self.press(r, 48 + 10)
+        self.loop(r)
+
+    def test_the_cut_cycles_and_recuts_live(self):
+        r = self.rig()
+        (_, _, gen, _, _, _), _, _, _ = self.load(r)
+        self.assertEqual(cut(r), (16, list(range(16))))
+        self.cycle_cut(r)
+        n, steps = cut(r)
+        _, sl, types, _ = ctrl(r)
+        self.assertEqual((n, steps), (8, list(range(0, 16, 2))))
+        for i in range(1, 8):                        # each cut on its hit
+            self.assertLess(abs(sl[i] - self.hits[2 * i]), 48, i)
+        self.assertEqual(types[:8], self.kinds[::2])
+        self.assertEqual(sl[8], len(self.drums))
+        leds = self.ui(r)
+        self.assertEqual(leds[3][10], 0x38)          # 8: medium
+        self.assertEqual(leds[2][7:9], [0x38 if self.kinds[14] in (KICK, SNARE) else 0x10, 0])
+        self.cycle_cut(r)
+        self.assertEqual(cut(r), (4, [0, 4, 8, 12]))
+        self.assertEqual(ctrl(r)[0][2], gen)         # not loaded again
+        self.cycle_cut(r)                            # Auto: a hit on every step
+        self.assertEqual(cut(r), (16, list(range(16))))
+        self.assertEqual(r.e.r8(BM_BASE + 111), 3)
+        self.cycle_cut(r)                            # 16 again
+        self.assertEqual((cut(r)[0], r.e.r8(BM_BASE + 111)), (16, 0))
+
+    def test_auto_cuts_a_slice_per_hit(self):
+        only = [0, 3, 4, 7, 8, 10, 12, 14]
+        for off in (150, -150):                     # the hits late, then early
+            drums, kinds, hits = drum_break(offset=off, only=only)
+            r = self.rig({'BREAKS/1.wav': wav(drums)})
+            self.load(r)
+            self.cycle_cut(r, 3)
+            n, steps = cut(r)
+            _, sl, types, _ = ctrl(r)
+            self.assertEqual(steps, only, off)
+            for i in range(1, n):
+                self.assertLess(abs(sl[i] - hits[only[i]]), 48, (off, i))
+            self.assertEqual(types[:n], [kinds[t] for t in only], off)
+
+    def test_the_cut_is_kept_with_the_kit(self):
+        r = self.rig()
+        self.load(r)
+        self.cycle_cut(r, 2)                         # 4
+        buf = 0x2407e000
+        n = r.e.call(r.cave['pk_bm_kit_save'], 0, 5, buf, 64)
+        self.assertEqual(bytes(r.e.uc.mem_read(buf, n))[0], 0 | 2 << 4)
+
+    def test_generator_with_eight_slices(self):
+        r = self.rig()
+        self.load(r)
+        self.cycle_cut(r)
+        for algo in (RUN, CHOP):
+            bar = self.generate(r, 4, algo=algo)     # Two-step
+            k = self.kinds[::2]                      # the 8 slices' kinds
+            self.assertEqual(k[bar[0][0]], KICK, algo)
+            self.assertEqual(k[bar[4][0]], SNARE, algo)
+            self.assertEqual(k[bar[12][0]], SNARE, algo)
+            self.assertEqual(k[bar[10][0]], KICK, algo)
 
     def test_cue_points_when_there_are_16(self):
         cues = [0] + [i * 4000 + 37 for i in range(1, 16)]
@@ -344,19 +415,25 @@ class TestBreakMakerM4(unittest.TestCase):
 
     # -- the generator ----------------------------------------------------------------------------
     def played(self, r, run):
-        """The bar the engine plays from VOICE's track: (slice, kind) per step, None silent (CHOP)."""
-        blk, out, offset = r.block(VOICE), [], 0
+        """The bar the engine plays from VOICE's track (as break_maker.c): (slice, velocity) per step,
+        None silent (CHOP)."""
+        n, steps = cut(r)
+        cover = lambda t: max(k for k in range(n) if steps[k] <= t)     # noqa: E731
+        blk, out, offset, playing = r.block(VOICE), [], 0, None
         for s in range(16):
             on = r.e.r8(blk + 8 * s) == 1
-            lk = self.lock(r, s)
-            sl = (s + offset) & 15
+            if s == 0:
+                offset = 0
+            k0 = steps.index(s) if s in steps else None
+            sl = (k0 + offset) % n if k0 is not None else (cover(s) if playing is None else playing)
             if on:
-                z = lk * 17 // 4096 if lk is not None else 0
-                sl = z - 1 if z else s
+                lk = self.lock(r, s)
+                z = p2_zone(lk, n) if lk is not None else 0
+                sl = z - 1 if z else cover(s)
                 if run:
-                    offset = (sl - s) & 15
-            v = self.vel(r, s)
-            out.append((sl, v) if on or run else None)
+                    offset = (sl - cover(s)) % n
+            playing = sl
+            out.append((sl, self.vel(r, s)) if on or run else None)
         return out
 
     def generate(self, r, chr_, algo=RUN, action=12):

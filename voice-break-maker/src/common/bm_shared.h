@@ -39,12 +39,19 @@ typedef struct {
     uint8_t type[BM_SLICES];        /* BM_T_* */
     uint8_t number;                 /* the break loaded, 0-15 (BREAKS/<number + 1>.wav) */
     uint8_t bars;                   /* how many bars the file is (1, 2, 4): its first one is played */
-    uint8_t pad[2];
+    volatile uint8_t nslice;        /* how many slices (1-16): slice[0..nslice], type and step too */
+    uint8_t cut;                    /* how it was cut: BM_CUT_* */
+    uint8_t step[BM_SLICES];        /* the step (0-15) each slice starts on, rising; step[0] = 0 */
 } bm_ctrl_t;
 
 _Static_assert(sizeof(bm_ctrl_t) <= BM_CTRL_SIZE, "control fits");
-_Static_assert(__builtin_offsetof(bm_ctrl_t, slice) == 24 && __builtin_offsetof(bm_ctrl_t, type) == 92,
+_Static_assert(__builtin_offsetof(bm_ctrl_t, slice) == 24 && __builtin_offsetof(bm_ctrl_t, type) == 92 &&
+               __builtin_offsetof(bm_ctrl_t, nslice) == 110 && __builtin_offsetof(bm_ctrl_t, step) == 112,
                "bm_rig.py: CTRL fields");
+
+/* how the bar is cut (the kit's, page row 4 step 11, cycling): 16, 8 or 4 slices (each cut moved
+ * onto the nearest hit), or Auto (a slice per hit, up to 16) */
+enum { BM_CUT_16, BM_CUT_8, BM_CUT_4, BM_CUT_AUTO, BM_NCUT };
 
 #define BM                  ((bm_ctrl_t *)(uintptr_t)BM_BASE)
 
@@ -90,14 +97,30 @@ static inline int bm_vel_kind(int vel)
 }
 static const uint8_t BM_VEL_OF[BM_NVEL] = {127, 104, 88, 72, 56, 40, 16};
 
-/* PARAM2 (0-4095): fully left (zone 0) follows the step; zones 1-16 are slices 1-16 */
-#define BM_P2_ZONES         17
-static inline int bm_p2_zone(int x)
+/* PARAM2 (0-4095) with n slices: fully left (zone 0) follows the step; zones 1-n are the slices.
+ * The zones scale with n, so a lock keeps about its place in the bar when the cut changes */
+static inline int bm_p2_zone(int x, int n)
 {
-    int z = x * BM_P2_ZONES / 4096;
-    return z < 0 ? 0 : (z >= BM_P2_ZONES ? BM_P2_ZONES - 1 : z);
+    int z = x * (n + 1) / 4096;
+    return z < 0 ? 0 : (z > n ? n : z);
 }
-static inline int bm_p2_of_slice(int s)         /* the middle of slice s's zone (a lock's value) */
+static inline int bm_p2_of_slice(int s, int n)  /* the middle of slice s's zone (a lock's value) */
 {
-    return ((2 * (s + 1) + 1) * 4096) / (2 * BM_P2_ZONES);
+    return ((2 * (s + 1) + 1) * 4096) / (2 * (n + 1));
+}
+
+/* the slice playing at step t (0-15): the last one starting on or before it */
+static inline int bm_cover(const uint8_t *step, int n, int t)
+{
+    int k = n - 1;
+    while (k > 0 && step[k] > t)
+        k--;
+    return k;
+}
+
+/* the slice starting on step t, or -1 */
+static inline int bm_starts(const uint8_t *step, int n, int t)
+{
+    int k = bm_cover(step, n, t);
+    return step[k] == t ? k : -1;
 }

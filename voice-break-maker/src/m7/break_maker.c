@@ -5,10 +5,11 @@
  * velocity, note, param pointers, mute, gain) sit at the stock offsets, and the vtable has the
  * four methods the firmware calls (trigger, init, update, render).
  *
- * The break (bm_shared.h): one bar in the AXI SRAM, cut into 16 slices, loaded by the M4. Its 16
- * slices are the track's 16 steps: the M4 sends each step of the voice's track ("break-maker-step",
- * before the step's triggers), and each step starts its slice, so the break plays as recorded at
- * whatever tempo (its speed: a slice per step, measured between the steps).
+ * The break (bm_shared.h): one bar in the AXI SRAM, loaded and cut by the M4 into 16, 8 or 4 slices
+ * or one per hit, each starting on a step. The M4 sends each step of the voice's track
+ * ("break-maker-step", before the step's triggers); a step where a slice starts starts it, the
+ * others let it run on, so the break plays as recorded at whatever tempo (its speed: the bar in 16
+ * steps, measured between the steps).
  *
  *   ALGO     1 RUN: the break loops; a trigger jumps: its slice (PARAM2) plays and the break
  *              carries on from there (to the track's first step, which starts it in place again)
@@ -21,7 +22,7 @@
  *   PARAM1   by MODE: 1 ROLL (off, x2, x3, x4, x6, x8 within the step), 2 MANGLE (the chance a step
  *            plays a generated slice; GENERATE: the amount), 3 STUTTER (a window of the slice
  *            looped: off, 1/2 ... 1/32 of a step)
- *   PARAM2   the slice a trigger plays: fully left follows the step, then slices 1-16
+ *   PARAM2   the slice a trigger plays: fully left the slice here (from this step), then a zone a slice
  *   velocity how the step plays (bm_vel_kind): plain, ghost (-12 dB), reverse, roll x2 / x3 / x4,
  *            reverse + roll x2
  *
@@ -130,7 +131,7 @@ typedef struct {
     int32_t out;
     uint32_t seen_gen, break_gen, hit_seen;
     int32_t playing, step, first, last, bar;
-    int32_t offset;                     /* RUN: a jump's slice - its step, until the first step */
+    int32_t offset;                     /* RUN: a jump's slice - the slice there, until the first step */
     int32_t waiting;                    /* a step that is on: its trigger is coming */
     int32_t last_slice;
     float since;                        /* samples since the step began */
@@ -294,7 +295,7 @@ static void read_knobs(bm_t *k)
     k->semis = (float)(int32_t)(s + (s < 0.0f ? -0.5f : 0.5f));
     k->gatek = knob(k, 1);
     k->p1 = knob(k, 2);
-    k->zone = bm_p2_zone(*k->param[3]);
+    k->zone = *k->param[3];             /* (its zone: by the slices there are, at the trigger) */
     k->algo_j = k->algo == POS1 ? A_RUN : (k->algo == POS3 ? A_CHOP : A_GEN);
     k->mode_j = k->mode == POS1 ? M_ROLL : (k->mode == POS3 ? M_STUTTER : M_MANGLE);
     k->keep = set_flags[k->out] & BM_SET_KEEP;
@@ -321,23 +322,43 @@ static int32_t gate_of(const bm_t *k, float span)
     return (int32_t)(span * (0.05f + 0.95f * x));
 }
 
-/* playing: a slice a step; stopped: the break's own speed */
+/* how many slices the break is cut in (1-16) */
+static int nsl(void)
+{
+    int n = BM->nslice;
+    return n >= 1 && n <= BM_SLICES ? n : BM_SLICES;
+}
+
+static int wrap_n(int s, int n)
+{
+    s %= n;
+    return s < 0 ? s + n : s;
+}
+
+/* how many steps slice s lasts */
+static int slice_steps(int s, int n)
+{
+    return (s + 1 < n ? BM->step[s + 1] : 16) - BM->step[s];
+}
+
+/* playing: the bar in 16 steps; stopped: the break's own speed */
 static void set_speed(bm_t *k)
 {
     if (!break_ok())
         k->speed = 1.0f;
     else if (k->playing)
-        k->speed = (float)BM->frames * (1.0f / BM_SLICES) / k->step_len;
+        k->speed = (float)BM->frames * (1.0f / 16.0f) / k->step_len;
     else
         k->speed = (float)BM->rate * (1.0f / SR);
 }
 
-/* start slice s on a fresh player (the one before fades out). kind: bm_vel_kind; extra semitones */
-static void start(bm_t *k, int s, int kind, float extra, float span)
+/* start slice s on a fresh player (the one before fades out), `into` frames into it (forward).
+ * kind: bm_vel_kind; extra semitones; span: samples it has (for the gate) */
+static void start(bm_t *k, int s, int kind, float extra, float span, float into)
 {
     if (!break_ok())
         return;
-    s &= BM_SLICES - 1;
+    s = wrap_n(s, nsl());
     pl_t *old = &k->pl[k->cur];
     if (old->active) {
         old->amp_to = 0.0f;
@@ -351,7 +372,7 @@ static void start(bm_t *k, int s, int kind, float extra, float span)
     if (p->revpad)
         rev = !rev;
     p->dir = rev ? -1.0f : 1.0f;
-    p->pos = rev ? (float)BM->slice[s + 1] - 1.0f : (float)BM->slice[s];
+    p->pos = rev ? (float)BM->slice[s + 1] - 1.0f : (float)BM->slice[s] + into;
     p->amp = 0.0f;
     p->amp_to = 1.0f;
     p->amp_k = pole(ATT_S);
@@ -405,9 +426,9 @@ static int generate(bm_t *k, int f, float cx)
     if (k->last_slice >= 0 && rndf(k) < 0.3f) {     /* a repeat, or the slice next door */
         float r = rndf(k);
         int s = r < 0.5f ? k->last_slice : k->last_slice + (r < 0.75f ? -1 : 1);
-        return s & (BM_SLICES - 1);
+        return wrap_n(s, nsl());
     }
-    return (int)(rnd(k) % BM_SLICES);
+    return (int)(rnd(k) % (uint32_t)nsl());
 }
 
 static const float CHAR_AMOUNT[BM_NCHAR] = {0.1f, 0.15f, 0.2f, 0.2f, 0.25f, 0.4f, 0.3f, 0.65f};
@@ -418,36 +439,52 @@ static int pads_own(const bm_t *k)      /* a pad that owns the voice: the steps 
                        1u << BM_PAD_FREEZE | 1u << BM_PAD_TAPESTOP | 1u << BM_PAD_STUTTER)) != 0u;
 }
 
-/* a step plays its slice: s, how (kind), transposed (extra); rolls by velocity or PARAM1 */
-static void play_step(bm_t *k, int s, int kind, float extra)
+/* a step plays slice s: how (kind), transposed (extra), from step `at` of it (re-cued in place; -1:
+ * its start); rolls by velocity or PARAM1 repeat its start within the step */
+static void play_step(bm_t *k, int s, int kind, float extra, int at)
 {
     if (pads_own(k))
         return;
-    if (k->pads >> BM_PAD_RANDOM & 1)
-        s = (int)(rnd(k) % BM_SLICES);
+    int ns = nsl();
+    if (k->pads >> BM_PAD_RANDOM & 1) {
+        s = (int)(rnd(k) % (uint32_t)ns);
+        at = -1;
+    }
+    s = wrap_n(s, ns);
     int n = kind == BM_V_ROLL2 || kind == BM_V_REVROLL ? 2 : (kind == BM_V_ROLL3 ? 3 : (kind == BM_V_ROLL4 ? 4 : 1));
     if (k->mode_j == M_ROLL) {
         static const uint8_t RN[6] = {1, 2, 3, 4, 6, 8};
         int r = RN[zone6(k->p1)];
         n = r > n ? r : n;
     }
-    float span = k->step_len / (float)n;
-    start(k, s, kind, extra, span);
-    if (n > 1)
+    if (n > 1) {
+        start(k, s, kind, extra, k->step_len / (float)n, 0.0f);
         roll_setup(k, n, s, kind, extra);
-    else
-        k->roll_left = 0;
+        return;
+    }
+    int into = at >= 0 ? at - BM->step[s] : 0, len = slice_steps(s, ns);
+    if (into < 0 || into >= len)
+        into = 0;
+    start(k, s, kind, extra, (float)(len - into) * k->step_len, (float)into * (float)BM->frames * (1.0f / 16.0f));
+    k->roll_left = 0;
 }
 
-/* the step's own slice for a step without a trigger (RUN, GENERATE) */
+/* a step without a trigger (RUN, GENERATE): the slice starting on it (moved by the last jump), or
+ * nothing (the slice playing runs on); the loop's first step inside a slice: re-cued in place */
 static void step_auto(bm_t *k)
 {
-    int f = (k->step + k->offset) & (BM_SLICES - 1);
+    int ns = nsl(), k0 = bm_starts(BM->step, ns, k->step);
+    if (k0 < 0) {
+        if (k->step == k->first)
+            play_step(k, bm_cover(BM->step, ns, k->step), BM_V_PLAIN, 0.0f, k->step);
+        return;
+    }
+    int f = wrap_n(k0 + k->offset, ns);
     if (k->algo_j == A_GEN)
         f = generate(k, f, k->mode_j == M_MANGLE ? k->p1 : CHAR_AMOUNT[k->chr]);
     else if (k->mode_j == M_MANGLE)
         f = generate(k, f, k->p1);
-    play_step(k, f, BM_V_PLAIN, 0.0f);
+    play_step(k, f, BM_V_PLAIN, 0.0f, -1);
 }
 
 /* a new step message: the tempo, then the step's slice (unless its trigger is coming) */
@@ -514,24 +551,29 @@ static void trigger(cVoice *v)
     sync_step(k);                       /* the step message comes first */
     int kind = bm_vel_kind(k->velocity);
     float extra = (float)((int)(k->note ? k->note : 36) - 36);
-    int s, zone = k->zone;
+    int s, p2 = k->zone, ns = nsl(), at = -1;
     step_msg_t *m = &steps_in[k->out];
     if (m->hit_gen != k->hit_seen) {    /* the sequencer's: the step's own PARAM2 */
         k->hit_seen = m->hit_gen;
-        zone = bm_p2_zone(m->hit_p2);
+        p2 = m->hit_p2;
     }
-    if (zone > 0)
+    int zone = bm_p2_zone(p2, ns), here = bm_cover(BM->step, ns, k->playing ? k->step : 0);
+    if (zone > 0) {
         s = zone - 1;
-    else
-        s = k->playing ? k->step : (k->last_slice >= 0 ? k->last_slice : 0);
+    } else if (k->playing) {            /* follow: the slice here, from this step */
+        s = here;
+        at = k->step;
+    } else {
+        s = k->last_slice >= 0 ? k->last_slice : 0;
+    }
     if (k->algo_j == A_CHOP && k->mode_j == M_MANGLE)
         s = generate(k, s, k->p1);
     if (k->playing && k->algo_j != A_CHOP)
-        k->offset = (s - k->step) & (BM_SLICES - 1);
+        k->offset = wrap_n(s - here, ns);
     if (!k->playing)
         set_speed(k);
     k->waiting = 0;
-    play_step(k, s, kind, extra);
+    play_step(k, s, kind, extra, at);
 }
 
 static void init(cVoice *v)
@@ -559,7 +601,7 @@ static void control(bm_t *k)
         k->proll_at -= (float)CTL;
         if (k->proll_at <= 0.0f) {
             k->proll_at += every;
-            start(k, k->proll_slice, BM_V_PLAIN, 0.0f, every);
+            start(k, k->proll_slice, BM_V_PLAIN, 0.0f, every, 0.0f);
         }
     }
     /* freeze / stutter: the player sounding loops a window from where it is */
@@ -625,11 +667,11 @@ static int16_t render(cVoice *v)
         if (set_aud[k->out] != k->aud_seen) {   /* the page plays a slice */
             k->aud_seen = set_aud[k->out];
             int a = (int)(k->aud_seen & 31u);
-            if (a > 0 && a <= BM_SLICES) {
+            if (a > 0 && a <= nsl()) {
                 if (!k->playing)
                     set_speed(k);
                 k->roll_left = 0;
-                start(k, a - 1, BM_V_PLAIN, 0.0f, k->step_len);
+                start(k, a - 1, BM_V_PLAIN, 0.0f, (float)slice_steps(a - 1, nsl()) * k->step_len, 0.0f);
             }
         }
         control(k);
@@ -641,7 +683,7 @@ static int16_t render(cVoice *v)
         if (k->roll_at <= 0.0f) {
             k->roll_at += k->roll_every;
             k->roll_left--;
-            start(k, k->roll_slice, k->roll_kind, k->roll_ratio, k->roll_every);
+            start(k, k->roll_slice, k->roll_kind, k->roll_ratio, k->roll_every, 0.0f);
             k->pl[k->cur].gain *= k->roll_gain = k->roll_gain * ROLL_DECAY;
         }
     }

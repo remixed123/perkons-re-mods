@@ -26,9 +26,13 @@ PADS = ['roll8', 'roll16', 'roll32', 'reverse', 'freeze', 'half', 'tapestop', 'g
         'stutter']
 
 
-def p2_of_slice(s):
-    """PARAM2's value for slice s (0-15): the middle of its zone (bm_shared.h)."""
-    return ((2 * (s + 1) + 1) * 4096) // (2 * 17)
+def p2_of_slice(s, n=16):
+    """PARAM2's value for slice s of n: the middle of its zone (bm_shared.h)."""
+    return ((2 * (s + 1) + 1) * 4096) // (2 * (n + 1))
+
+
+def p2_zone(x, n=16):
+    return max(0, min(n, x * (n + 1) // 4096))
 
 
 def make_break(rate=44100, bpm=140.0, seed=1, marks=True):
@@ -51,10 +55,11 @@ def make_break(rate=44100, bpm=140.0, seed=1, marks=True):
 DRUMS = {0: KICK, 10: KICK, 4: SNARE, 12: SNARE, 7: GHOST}     # the rest: hats
 
 
-def drum_break(rate=44100, bpm=140.0, seed=3, offset=0):
+def drum_break(rate=44100, bpm=140.0, seed=3, offset=0, only=None):
     """A 1-bar break of synthetic drums on 16ths: kick on 1 and the "and" of 3, snare on 2 and 4,
     a ghost snare on step 8, hats (high-passed noise) elsewhere. offset: every hit that many frames
-    late (off the grid). Returns (pcm, kind per step, where each hit begins)."""
+    late (off the grid); only: the steps with a hit (the rest silent). Returns (pcm, kind per step,
+    where each hit begins)."""
     rnd = random.Random(seed)
     n = int(round(rate * 240.0 / bpm))
     g = n / 16
@@ -65,6 +70,8 @@ def drum_break(rate=44100, bpm=140.0, seed=3, offset=0):
         kinds.append(k)
         a = int(round(s * g)) + (offset if s else 0)
         hits.append(a)
+        if only is not None and s not in only:
+            continue
         prev = 0.0
         for i in range(int(g)):
             t = i / rate
@@ -134,21 +141,27 @@ class BreakMaker:
         names = sorted(['break-maker', 'break-maker-step', 'voice-map'] + list(messages))
         self.msg = {n: m7host.FIRST_MESSAGE + i for i, n in enumerate(names)}
 
-    def machine(self, outs=(0,), pcm=None, starts=None, rate=44100, kinds=None):
+    def machine(self, outs=(0,), pcm=None, starts=None, rate=44100, kinds=None, steps=None):
         """Booted M7 with BREAK MAKER on `outs` (engine 5: map value 4), and a break in RAM."""
         e = verify.boot(self.img, self.sym)
         if pcm is not None:
-            self.load(e, pcm, starts, rate, kinds)
+            self.load(e, pcm, starts, rate, kinds, steps)
         self.remap(e, [4 if o in outs else o for o in range(4)])
         e.audio(960)
         return e
 
-    def load(self, e, pcm, starts=None, rate=44100, kinds=None):
+    def load(self, e, pcm, starts=None, rate=44100, kinds=None, steps=None):
+        """The break as the M4 leaves it: starts (frames) and the step each slice starts on
+        (default: 16 equal slices, one a step)."""
         n = len(pcm)
         starts = starts or [n * i // 16 for i in range(16)]
+        ns = len(starts)
+        steps = steps or [i * 16 // ns for i in range(ns)]
         e.uc.mem_write(BM_PCM, struct.pack(f'<{n}h', *pcm))
-        hdr = struct.pack('<6I', MAGIC, 0, 1, n, rate, BM_PCM) + struct.pack('<17I', *starts, n)
-        hdr += bytes(kinds or [HAT] * 16) + bytes([0, 0, 0, 0])
+        sl = list(starts) + [n] * (17 - ns)
+        hdr = struct.pack('<6I', MAGIC, 0, 1, n, rate, BM_PCM) + struct.pack('<17I', *sl)
+        hdr += bytes((kinds or [HAT] * ns) + [0] * (16 - ns)) + bytes([0, 1, ns, 0])
+        hdr += bytes(list(steps) + [0] * (16 - ns))
         e.uc.mem_write(BM_BASE, hdr)
         e.uc.mem_write(BM_BASE + 4, struct.pack('<I', 1))         # ready
 

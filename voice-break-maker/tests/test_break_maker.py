@@ -123,6 +123,48 @@ class TestBreakMaker(unittest.TestCase):
         self.assertLess(peak(out[960:]), 20)
         self.assertEqual(self.bm.status(e)[2], -1)
 
+    # -- coarser cuts: 8, 4, Auto -----------------------------------------------------------------
+    def cut(self, every=None, steps=None):
+        """The tone break cut coarser: a slice every `every` steps, or starting on `steps`."""
+        steps = steps or list(range(0, 16, every))
+        return self.bm.machine(pcm=self.pcm, starts=[self.starts[t] for t in steps], steps=steps)
+
+    def test_eight_slices_run_through_their_steps(self):
+        e = self.cut(every=2)
+        out, at = self.bar(e, [MID, GATE_OFF, 0, 0])
+        self.assertEqual(self.slices(out, at), list(range(16)))     # the same bar, ...
+        self.assertEqual(self.bm.status(e)[1], 8)                   # ... in 8 starts
+
+    def test_eight_slices_jump(self):
+        """Slice 4 of 8 (the tones of steps 6-7) locked on step 5: it plays from its start, then the
+        break carries on from the next slice's step."""
+        e = self.cut(every=2)
+        out, at = self.bar(e, [MID, GATE_OFF, 0, p2_of_slice(3, 8)], on={5}, trig_at={5: VEL['plain']})
+        want = [0, 1, 2, 3, 4, 6, 8, 9, 10, 11, 12, 13, 14, 15, 0, 1]
+        self.assertEqual(self.slices(out, at), want)
+
+    def test_follow_trigger_inside_a_slice_recues_in_place(self):
+        e = self.cut(every=4)
+        out, at = self.bar(e, [MID, GATE_OFF, 0, 0], steps=range(8), on={5}, trig_at={5: VEL['plain']})
+        self.assertEqual(self.slices(out, at), list(range(8)))
+        self.assertEqual(self.bm.status(e)[1], 3)       # steps 0, 4 and the trigger on 5
+
+    def test_four_slices_gate_spans_the_beat(self):
+        e = self.cut(every=4)
+        out, at = self.bar(e, [MID, 2048, 0, 0], steps=range(8))
+        L = int(step_len(140))
+        self.assertGreater(rms(out[at[1]:at[1] + 200]), 500)       # step 2: the slice still sounds
+        self.assertLess(peak(out[at[3] + L // 2:at[4] - 200]), 30)  # its gate closed in step 4
+
+    def test_auto_cut_uneven_steps(self):
+        steps = [0, 3, 4, 8, 10, 12]
+        e = self.cut(steps=steps)
+        out, at = self.bar(e, [MID, GATE_OFF, 0, p2_of_slice(4, 6)], on={6}, trig_at={6: VEL['plain']})
+        got = self.slices(out, at)
+        self.assertEqual(got[:6], list(range(6)))
+        self.assertEqual(got[6:10], [10, 11, 12, 13])   # slice 5 of 6 (step 10's) from step 6 ...
+        self.assertEqual(got[10:13], [0, 1, 3])         # step 10: its slice 5 + 2 wraps to 1; step 12: 6 + 2 -> 2
+
     # -- CHOP -----------------------------------------------------------------------------------
     def test_chop_plays_only_triggers(self):
         e = self.machine()

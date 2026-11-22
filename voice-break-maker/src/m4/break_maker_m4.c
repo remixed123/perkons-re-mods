@@ -22,7 +22,8 @@
  *           random, filter throw, stutter; 12-16: step types for the held steps: ghost, reverse,
  *           roll x2, roll x3, roll x4 (the lit one again: plain; reverse with roll x2: both)
  *   row 3   slices 1-16: with held steps, their slice (a PARAM2 lock); else heard
- *   row 4   the generator's character (1-8), pitch repitch / keep length (9-10), New pattern, Keep
+ *   row 4   the generator's character (1-8), pitch repitch / keep length (9-10), the cut (11, each press
+ *           the next: 16, 8, 4 slices, Auto; bright, medium, dim, blinking), New pattern, Keep
  *           rhythm, Vary, Clear (13-16: on release; held 0.5 s: undo the last of them)
  * The trigger keys play; SHIFT, KIT or MOD goes back to the engine page; SHUFFLE to the main page. */
 #include <stdint.h>
@@ -366,75 +367,51 @@ static int32_t onset(const int16_t *x, int32_t n, int32_t a, int32_t b, int32_t 
     return best;
 }
 
-static void find_slices(void)
+static uint32_t cues_ok;                /* the break has 16 good cue points (cue[], ascending) */
+
+static void check_cues(void)
 {
-    const int16_t *x = (const int16_t *)(uintptr_t)pcm_base();
-    int32_t n = (int32_t)l_frames, g = n / 16;
-    uint32_t *sl = BM->slice;
-    if (l_ncue == 16) {                 /* its own cue points (ascending, inside) */
-        for (int i = 1; i < 16; i++)
-            for (int j = i; j > 0 && cue[j - 1] > cue[j]; j--) {
-                uint32_t t = cue[j];
-                cue[j] = cue[j - 1];
-                cue[j - 1] = t;
-            }
-        int ok = cue[15] < (uint32_t)n;
-        for (int i = 1; i < 16; i++)
-            ok &= cue[i] > cue[i - 1];
-        if (ok) {
-            for (int i = 0; i < 16; i++)
-                sl[i] = i ? cue[i] : 0;
-            sl[16] = (uint32_t)n;
-            return;
+    cues_ok = 0;
+    if (l_ncue != 16)
+        return;
+    for (int i = 1; i < 16; i++)
+        for (int j = i; j > 0 && cue[j - 1] > cue[j]; j--) {
+            uint32_t t = cue[j];
+            cue[j] = cue[j - 1];
+            cue[j - 1] = t;
         }
-    }
-    /* the loudest hop's level: how big a rise counts as a hit */
-    int32_t emax = 1;
-    for (int32_t h = 64; h + JUMP_W <= n; h += 32) {
-        int32_t e = strength(x, n, h, hop_e(x, h - 32));
-        emax = e > emax ? e : emax;
-    }
-    sl[0] = 0;
-    for (int i = 1; i < 16; i++) {
-        int32_t c = i * g, w = g * 3 / 10, r;
-        int32_t a = c - w, lo = (int32_t)sl[i - 1] + g / 4;
-        a = a < lo ? lo : a;
-        a = a < 32 ? 32 : a;
-        int32_t h = onset(x, n, a, c + w, &r);
-        int32_t at = h >= 0 && r * 40 > emax ? h + 16 : c;  /* the hit (its hop's middle), else the grid */
-        at -= 24;                                           /* a little before: the attack's start */
-        sl[i] = (uint32_t)(at < lo ? lo : at);
-    }
-    sl[16] = (uint32_t)n;
+    int ok = cue[15] < BM->frames;
+    for (int i = 1; i < 16; i++)
+        ok &= cue[i] > cue[i - 1];
+    cues_ok = (uint32_t)ok;
 }
 
-/* each slice's kind, from its first 25 ms: level E, low part L (one pole at ~150 Hz), brightness D
- * (sample to sample differences) */
-static void sort_slices(void)
+/* each slice's kind (of n), from its first 25 ms: level E, low part L (one pole at ~150 Hz),
+ * brightness D (sample to sample differences) */
+static void sort_slices(const int16_t *x, const uint32_t *sl, int n, uint8_t *type)
 {
-    const int16_t *x = (const int16_t *)(uintptr_t)pcm_base();
-    uint32_t e[16], lo[16], d[16], emax = 1;
-    int32_t a = (int32_t)(65536.0f * 6.2831853f * 150.0f / (float)l_rate);
-    for (int s = 0; s < 16; s++) {
-        uint32_t b = BM->slice[s], m = BM->slice[s + 1] - b, w = l_rate / 40u;
+    uint32_t e[16], lo[16], d[16], emax = 1, rate = BM->rate;
+    int32_t a = (int32_t)(65536.0f * 6.2831853f * 150.0f / (float)rate);
+    for (int s = 0; s < n; s++) {
+        uint32_t b = sl[s], m = sl[s + 1] - b, w = rate / 40u;
         m = m < w ? m : w;
-        uint32_t se = 0, sl = 0, sd = 0;
+        uint32_t se = 0, sm = 0, sd = 0;
         int32_t lp = 0, prev = x[b];
         for (uint32_t i = 0; i < m; i++) {
             int32_t v = x[b + i];
             lp += (int32_t)(((int64_t)(v - lp) * a) >> 16);
             se += (uint32_t)absi(v);
-            sl += (uint32_t)absi(lp);
+            sm += (uint32_t)absi(lp);
             sd += (uint32_t)absi(v - prev);
             prev = v;
         }
         m = m ? m : 1;
         e[s] = se / m;
-        lo[s] = sl / m;
+        lo[s] = sm / m;
         d[s] = sd / m;
         emax = e[s] > emax ? e[s] : emax;
     }
-    for (int s = 0; s < 16; s++) {
+    for (int s = 0; s < n; s++) {
         uint8_t t;
         if (d[s] * 100 > e[s] * 140)           /* bright noise: hat (whatever its level) */
             t = BM_T_HAT;
@@ -444,8 +421,94 @@ static void sort_slices(void)
             t = BM_T_GHOST;
         else
             t = BM_T_SNARE;
-        BM->type[s] = t;
+        type[s] = t;
     }
+}
+
+/* the break cut (mode BM_CUT_*), published to the M7: 16, 8 or 4 slices, each cut moved onto a
+ * hit near its grid point (within ~a third of a sixteenth, so a coarse cut can't wander onto an
+ * off-beat), or its 16 cue points (every 2nd / 4th for 8 / 4); Auto: a slice on each step with a
+ * hit near it (the bar's start always). Also live, on the break in RAM (a cut changed on the page: no reload). */
+static void cut_break(int mode)
+{
+    const int16_t *x = (const int16_t *)(uintptr_t)BM->pcm;
+    int32_t N = (int32_t)BM->frames, g16 = N / 16;
+    uint32_t sl[BM_SLICES + 1];
+    uint8_t st[BM_SLICES], type[BM_SLICES];
+    int n = mode == BM_CUT_8 ? 8 : (mode == BM_CUT_4 ? 4 : 16);
+    /* the strongest hit: how big a rise counts as one */
+    int32_t emax = 1;
+    for (int32_t h = 64; h + JUMP_W <= N; h += 32) {
+        int32_t e = strength(x, N, h, hop_e(x, h - 32));
+        emax = e > emax ? e : emax;
+    }
+    if (mode == BM_CUT_AUTO) {
+        /* Auto: a slice on each step that has a hit near it (within 40% of a step): the level over
+         * the next ~12 ms at least 2x the last ~12 ms (a kick, a ghost, anything after quiet), or
+         * the attack energy at least 2.5x the half step before it and at least 1/20 of the bar's
+         * strongest attack (a hat or snare right after another sound). A sound's own wobbles fail
+         * both. The slice starts on the hit (as the fixed cuts) */
+        int32_t amax = 1;
+        for (int32_t h = 32; h + 32 <= N; h += 32) {
+            int32_t e = hop_e(x, h);
+            amax = e > amax ? e : amax;
+        }
+        n = 0;
+        sl[n] = 0;
+        st[n++] = 0;
+        for (int t = 1; t < 16; t++) {
+            int32_t c = t * g16, w = g16 * 2 / 5, lo = (int32_t)sl[n - 1] + g16 / 4;
+            int32_t a = c - w < lo ? lo : c - w, b = c + w;
+            a = a < 320 ? 320 : a;
+            b = b > N - JUMP_W ? N - JUMP_W : b;
+            int hit = 0;
+            for (int32_t h = a; h + 32 <= b && !hit; h += 32) {
+                int32_t e = hop_e(x, h), pre = 50;
+                for (int j = 1; j <= 8; j++)
+                    pre += hop_e(x, h - 32 * j) / 8;
+                int32_t lf = level(x, N, h, h + JUMP_W), lf_pre = level(x, N, h - JUMP_W, h) + 50;
+                hit = lf >= 2 * lf_pre || (2 * e >= 5 * pre && 20 * e >= amax);
+            }
+            if (!hit)
+                continue;
+            int32_t r, h = onset(x, N, a, b, &r);
+            int32_t at = (h >= 0 ? h + 16 : c) - 24;
+            sl[n] = (uint32_t)(at < lo ? lo : at);
+            st[n++] = (uint8_t)t;
+        }
+    } else if (cues_ok) {
+        for (int i = 0; i < n; i++) {
+            sl[i] = i ? cue[i * 16 / n] : 0;
+            st[i] = (uint8_t)(i * 16 / n);
+        }
+    } else {
+        int32_t g = N / n, w = g16 * 3 / 10;
+        sl[0] = 0;
+        st[0] = 0;
+        for (int i = 1; i < n; i++) {
+            int32_t c = i * g, r;
+            int32_t a = c - w, lo = (int32_t)sl[i - 1] + g16 / 4;
+            a = a < lo ? lo : a;
+            a = a < 32 ? 32 : a;
+            int32_t h = onset(x, N, a, c + w, &r);
+            int32_t at = h >= 0 && r * 40 > emax ? h + 16 : c;  /* the hit (its hop's middle), else the grid */
+            at -= 24;                                           /* a little before: the attack's start */
+            sl[i] = (uint32_t)(at < lo ? lo : at);
+            st[i] = (uint8_t)(i * 16 / n);
+        }
+    }
+    sl[n] = (uint32_t)N;
+    sort_slices(x, sl, n, type);
+    /* publish (the M7 reads these at each start: the count last, after the tables) */
+    for (int i = 0; i <= n; i++)
+        BM->slice[i] = sl[i];
+    for (int i = 0; i < n; i++) {
+        BM->type[i] = type[i];
+        BM->step[i] = st[i];
+    }
+    BM->cut = (uint8_t)mode;
+    dmb();
+    BM->nslice = (uint8_t)n;
 }
 
 /* ---- the loader (main loop) -------------------------------------------------------------------- */
@@ -503,8 +566,8 @@ static void load_step(void)
     BM->frames = l_frames;
     BM->rate = l_rate;
     BM->pcm = pcm_base();
-    find_slices();
-    sort_slices();
+    check_cues();
+    cut_break((bm_cur[0] >> 4) & 3);
     BM->number = (uint8_t)l_number;
     BM->bars = (uint8_t)l_bars;
     BM->gen++;
@@ -579,7 +642,7 @@ void pk_bm_kit_restore(int bank, int kit, const uint8_t *rec, uint32_t len)
     defaults(bm_kit_rec[kit]);
     if (len != NREC)
         return;
-    bm_kit_rec[kit][0] = rec[0] & 15;
+    bm_kit_rec[kit][0] = rec[0] & 0x3f;     /* the break, the cut << 4 */
     for (int v = 0; v < 4; v++)
         bm_kit_rec[kit][1 + v] = (uint8_t)((rec[1 + v] & 7) | (rec[1 + v] & 8));
 }
@@ -614,12 +677,35 @@ static int chance(int pct)
 
 /* ---- the generator ------------------------------------------------------------------------------- */
 
+/* the cut: how many slices (no break: 16, a slice a step) */
+static int nsl(void)
+{
+    int n = BM->nslice;
+    return BM->ready && n >= 1 && n <= BM_SLICES ? n : BM_SLICES;
+}
+
+static int wrap_n(int s, int n)
+{
+    s %= n;
+    return s < 0 ? s + n : s;
+}
+
+static int cover_at(int t)              /* the slice playing at step t */
+{
+    return BM->ready ? bm_cover(BM->step, nsl(), t) : t;
+}
+
+static int starts_at(int t)             /* the slice starting on step t, or -1 */
+{
+    return BM->ready ? bm_starts(BM->step, nsl(), t) : t;
+}
+
 /* a slice of kind t (at random), else `fallback` */
 static int pick(int t, int fallback)
 {
-    int c[16], n = 0;
+    int c[16], n = 0, ns = nsl();
     if (BM->ready)
-        for (int s = 0; s < 16; s++)
+        for (int s = 0; s < ns; s++)
             if (BM->type[s] == t)
                 c[n++] = s;
     return n ? c[rr(n)] : fallback;
@@ -628,9 +714,9 @@ static int pick(int t, int fallback)
 /* the break's own kinds if it has a kick and a snare, else by position (kick 1, snares 5 and 13) */
 static int typed(void)
 {
-    int k = 0, s = 0;
+    int k = 0, s = 0, ns = nsl();
     if (BM->ready)
-        for (int i = 0; i < 16; i++) {
+        for (int i = 0; i < ns; i++) {
             k |= BM->type[i] == BM_T_KICK;
             s |= BM->type[i] == BM_T_SNARE;
         }
@@ -639,22 +725,22 @@ static int typed(void)
 
 static int kick(void)
 {
-    return typed() ? pick(BM_T_KICK, 0) : (chance(50) ? 0 : 8);
+    return typed() ? pick(BM_T_KICK, 0) : cover_at(chance(50) ? 0 : 8);
 }
 
 static int snare(void)
 {
-    return typed() ? pick(BM_T_SNARE, 4) : (chance(50) ? 4 : 12);
+    return typed() ? pick(BM_T_SNARE, cover_at(4)) : cover_at(chance(50) ? 4 : 12);
 }
 
 static int hat(int s)
 {
-    return typed() ? pick(BM_T_HAT, pick(BM_T_GHOST, s)) : s;
+    return typed() ? pick(BM_T_HAT, pick(BM_T_GHOST, cover_at(s))) : cover_at(s);
 }
 
 static int ghost(int s)
 {
-    return typed() ? pick(BM_T_GHOST, pick(BM_T_SNARE, s)) : s;
+    return typed() ? pick(BM_T_GHOST, pick(BM_T_SNARE, cover_at(s))) : cover_at(s);
 }
 
 /* a character's step: on / off, slice, kind (bm_vel_kind) */
@@ -672,21 +758,32 @@ static void hit(line_t *l, int s, int slice, int kind)
 /* the character's whole bar */
 static void make(line_t *l, int chr)
 {
+    int ns = nsl();
     for (int s = 0; s < 16; s++) {
         l->on[s] = 0;
-        l->slice[s] = (uint8_t)s;
+        l->slice[s] = (uint8_t)cover_at(s);
         l->kind[s] = BM_V_PLAIN;
     }
     switch (chr) {
-    case BM_C_STRAIGHT:                 /* the break, a few swaps */
+    case BM_C_STRAIGHT: {               /* the break, a few swaps (off the beat where it can) */
+        int at[16], na = 0, nb = 0;
         for (int s = 0; s < 16; s++)
-            hit(l, s, s, BM_V_PLAIN);
-        for (int i = 0, n = 2 + rr(2); i < n; i++) {
-            int s = 1 + 2 * rr(8);             /* an off-beat 16th */
-            int t = typed() ? BM->type[s & 15] : BM_T_HAT;
-            hit(l, s & 15, pick(t, rr(16)), BM_V_PLAIN);
+            if (starts_at(s) >= 0) {
+                hit(l, s, starts_at(s), BM_V_PLAIN);
+                if (s & 3)
+                    at[na++] = s;
+            }
+        if (!na)                        /* (cut in beats: any but the first) */
+            for (int s = 1; s < 16; s++)
+                if (starts_at(s) >= 0)
+                    at[na++] = s;
+        for (int i = 0, n = 2 + rr(2); i < n && na > 0 && nb < 3; i++, nb++) {
+            int s = at[rr(na)];
+            int t = typed() ? BM->type[l->slice[s]] : BM_T_HAT;
+            hit(l, s, pick(t, rr(ns)), BM_V_PLAIN);
         }
         break;
+    }
     case BM_C_SPARSE:                   /* kick and snare, room between */
         hit(l, 0, kick(), BM_V_PLAIN);
         hit(l, 4, snare(), BM_V_PLAIN);
@@ -745,7 +842,8 @@ static void make(line_t *l, int chr)
     }
     case BM_C_FILLS:                    /* the break, then a busy last quarter */
         for (int s = 0; s < 12; s++)
-            hit(l, s, s, BM_V_PLAIN);
+            if (starts_at(s) >= 0)
+                hit(l, s, starts_at(s), BM_V_PLAIN);
         for (int s = 12; s < 16; s++) {
             static const uint8_t K[4] = {BM_V_PLAIN, BM_V_ROLL2, BM_V_ROLL3, BM_V_REVERSE};
             hit(l, s, chance(70) ? snare() : kick(), K[rr(4)]);
@@ -756,7 +854,7 @@ static void make(line_t *l, int chr)
                                      BM_V_REVERSE, BM_V_REVROLL};
         for (int s = 0; s < 16; s++)
             if (s == 0 || chance(85))
-                hit(l, s, s == 0 ? kick() : rr(16), s == 0 ? BM_V_PLAIN : K[rr(8)]);
+                hit(l, s, s == 0 ? kick() : rr(ns), s == 0 ? BM_V_PLAIN : K[rr(8)]);
         break;
     }
     }
@@ -807,11 +905,21 @@ static void put_step(uint8_t *blk, int s, int on, int slice, int vel)
         r[6] = 36;
     r[7] = (uint8_t)vel;
     if (slice >= 0) {
-        LP2(lk) = (uint16_t)(bm_p2_of_slice(slice) << 4);
+        LP2(lk) = (uint16_t)(bm_p2_of_slice(slice, nsl()) << 4);
         LMASK(lk) |= (uint16_t)(1u << FW_SLOT_PARAM2);
     } else {
         LMASK(lk) &= (uint16_t)~(1u << FW_SLOT_PARAM2);
     }
+}
+
+/* what RUN plays at step s without a trigger (as the engine): the slice starting there moved by
+ * the last jump, else the one playing runs on (the loop's first step: the slice there) */
+static int natural(int s, int first, int offset, int playing)
+{
+    int k0 = starts_at(s);
+    if (k0 >= 0)
+        return wrap_n(k0 + offset, nsl());
+    return s == first || playing < 0 ? cover_at(s) : playing;
 }
 
 /* the bar into voice v's track. RUN / GENERATE: a trigger only where the break wouldn't play that
@@ -822,18 +930,22 @@ static void write_line(int v, const line_t *l)
     uint8_t *blk = track_block(v);
     if (!blk)
         return;
-    int first = blk[FW_BLK_FIRST] & 15, last = blk[FW_BLK_LAST] & 15;
-    int run = algo_run(v), offset = 0;
+    int first = blk[FW_BLK_FIRST] & 15, last = blk[FW_BLK_LAST] & 15, ns = nsl();
+    int run = algo_run(v), offset = 0, playing = -1;
     uint32_t pm = pk_irq_off();
     for (int s = 0; s < 16; s++) {
         if (s == first)
             offset = 0;
         int on = l->on[s];
-        if (run && on && s >= first && s <= last) {
-            int auto_s = (s + offset) & 15;
-            on = l->slice[s] != auto_s || l->kind[s] != BM_V_PLAIN;
-            if (on)
-                offset = (l->slice[s] - s) & 15;
+        if (run && s >= first && s <= last) {
+            int nat = natural(s, first, offset, playing);
+            on = on && (l->slice[s] != nat || l->kind[s] != BM_V_PLAIN);
+            if (on) {
+                offset = wrap_n(l->slice[s] - cover_at(s), ns);
+                playing = l->slice[s];
+            } else {
+                playing = nat;
+            }
         } else if (run) {
             on = 0;
         }
@@ -842,22 +954,24 @@ static void write_line(int v, const line_t *l)
     pk_irq_restore(pm);
 }
 
-/* the steps as they are: on (in CHOP; in RUN the bar as the break plays it), slice, kind */
+/* the steps as they are: on (CHOP: the hits; RUN: the triggers and the slices' own starts), the
+ * slice each plays, kind */
 static void read_line(int v, const uint8_t *blk, line_t *l)
 {
-    int first = blk[FW_BLK_FIRST] & 15, run = algo_run(v), offset = 0;
+    int first = blk[FW_BLK_FIRST] & 15, run = algo_run(v), offset = 0, playing = -1, ns = nsl();
     for (int s = 0; s < 16; s++) {
         if (s == first)
             offset = 0;
         const uint8_t *r = blk + FW_STEP_SIZE * s, *lk = LOCK(blk, s);
-        int on = r[0] == 1, sl = (s + offset) & 15;
-        if (on && LMASK(lk) >> FW_SLOT_PARAM2 & 1) {
-            int z = bm_p2_zone(LP2(lk) >> 4);
-            sl = z ? z - 1 : s;
+        int on = r[0] == 1, sl = run ? natural(s, first, offset, playing) : cover_at(s);
+        if (on) {
+            int z = LMASK(lk) >> FW_SLOT_PARAM2 & 1 ? bm_p2_zone(LP2(lk) >> 4, ns) : 0;
+            sl = z ? z - 1 : cover_at(s);
+            if (run)
+                offset = wrap_n(sl - cover_at(s), ns);
         }
-        if (on && run)
-            offset = (sl - s) & 15;
-        l->on[s] = (uint8_t)(run ? 1 : on);
+        playing = sl;
+        l->on[s] = (uint8_t)(run ? (on || starts_at(s) >= 0) : on);
         l->slice[s] = (uint8_t)sl;
         l->kind[s] = (uint8_t)(on ? bm_vel_kind(r[7]) : BM_V_PLAIN);
     }
@@ -894,12 +1008,12 @@ static void action(int v, int a)
     if (a == A_CLEAR) {                 /* the break as it is: no steps of ours */
         for (int s = 0; s < 16; s++) {
             l.on[s] = 0;
-            l.slice[s] = (uint8_t)s;
+            l.slice[s] = (uint8_t)cover_at(s);
             l.kind[s] = BM_V_PLAIN;
         }
         if (!algo_run(v))
             for (int s = 0; s < 16; s++)
-                l.on[s] = 1;
+                l.on[s] = (uint8_t)(starts_at(s) >= 0);
         write_line(v, &l);
         return;
     }
@@ -934,7 +1048,7 @@ static void action(int v, int a)
                     int j = rr(n), s = idx[j];
                     idx[j] = idx[--n];
                     int t = typed() ? BM->type[now.slice[s]] : BM_T_HAT;
-                    now.slice[s] = (uint8_t)pick(t, rr(16));
+                    now.slice[s] = (uint8_t)pick(t, rr(nsl()));
                     now.kind[s] = l.kind[s];
                 }
                 for (int s = 0; s < 16; s++) {
@@ -965,6 +1079,10 @@ void pk_bm_main_loop(void)
     if (avail_bank != bank_now + 1 && lstate == L_IDLE)
         refresh_avail();
     load_step();
+    int want_cut = (bm_cur[0] >> 4) & 3;     /* the cut changed (page, kit): the break in RAM cut again */
+    if (lstate == L_IDLE && BM->ready && loaded == (bm_cur[0] & 15) + 256 * (int32_t)bank_now + 1 &&
+        BM->cut != want_cut)
+        cut_break(want_cut);
     if (seq()[FW_SEQ_PLAY] != 1)        /* stopped (the ticks may not run): tell the M7 */
         for (int v = 0; v < 4; v++)
             if (sent_play[v]) {
@@ -1051,7 +1169,7 @@ static void set_held(int kind, int slice)
         }
         if (slice >= 0) {
             uint8_t *lk = LOCK(blk, k % 16);
-            LP2(lk) = (uint16_t)(bm_p2_of_slice(slice) << 4);
+            LP2(lk) = (uint16_t)(bm_p2_of_slice(slice, nsl()) << 4);
             LMASK(lk) |= (uint16_t)(1u << FW_SLOT_PARAM2);
         }
     }
@@ -1105,6 +1223,8 @@ int pk_bm_page_key(const uint8_t *evt)
             if (any_held())
                 set_held(want, -1);
         } else if (row == 2) {                  /* a slice: the held steps', or heard */
+            if (col >= nsl())
+                return 1;
             if (any_held()) {
                 set_held(-1, col);
             } else {
@@ -1117,6 +1237,9 @@ int pk_bm_page_key(const uint8_t *evt)
         } else if (col < 10) {                  /* pitch: repitch / keep length */
             bm_cur[1 + v] = (uint8_t)((bm_cur[1 + v] & 7) | (col == 9 ? 8 : 0));
             mark(v);
+        } else if (col == 10) {                 /* the cut: 16, 8, 4, Auto, 16 ... (the main loop cuts) */
+            int c = ((bm_cur[0] >> 4) + 1) & 3;
+            bm_cur[0] = (uint8_t)((bm_cur[0] & 15) | c << 4);
         }
         return 1;
     }
@@ -1161,11 +1284,16 @@ void pk_bm_page_draw(void)
             int lit = hk == t || (hk == BM_V_REVROLL && (t == BM_V_REVERSE || t == BM_V_ROLL2));
             lv = hk < 0 ? 0 : (lit ? LED_ON : LED_DIM);
         } else if (row == 2)
-            lv = BM->ready ? (BM->type[col] == BM_T_KICK || BM->type[col] == BM_T_SNARE ? LED_MID : LED_DIM) : 0;
+            lv = BM->ready && col < nsl() ? (BM->type[col] == BM_T_KICK || BM->type[col] == BM_T_SNARE ? LED_MID : LED_DIM) : 0;
         else if (col < 8)
             lv = col == (bm_cur[1 + v] & 7) ? LED_ON : LED_DIM;
         else if (col < 10)
             lv = (col == 9) == ((bm_cur[1 + v] >> 3) & 1) ? LED_ON : LED_DIM;
+        else if (col == 10) {                   /* the cut: 16 bright, 8 medium, 4 dim, Auto blinking */
+            static const uint8_t CUT_LED[3] = {LED_ON, LED_MID, LED_DIM};
+            int c = (bm_cur[0] >> 4) & 3;
+            lv = c < 3 ? CUT_LED[c] : ((fw_get_tick() >> 8) & 1 ? LED_ON : 0);
+        }
         else if (col >= 12)
             lv = (uint32_t)k + 1 == act_key ? LED_ON : LED_DIM;
         fw_set_led(k, (uint8_t)lv);
