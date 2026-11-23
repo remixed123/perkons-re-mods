@@ -733,17 +733,7 @@ static int snare(void)
     return typed() ? pick(BM_T_SNARE, cover_at(4)) : cover_at(chance(50) ? 4 : 12);
 }
 
-static int hat(int s)
-{
-    return typed() ? pick(BM_T_HAT, pick(BM_T_GHOST, cover_at(s))) : cover_at(s);
-}
-
-static int ghost(int s)
-{
-    return typed() ? pick(BM_T_GHOST, pick(BM_T_SNARE, cover_at(s))) : cover_at(s);
-}
-
-/* a character's step: on / off, slice, kind (bm_vel_kind) */
+/* a step of the bar: on / off, slice, kind (bm_vel_kind) */
 typedef struct {
     uint8_t on[16], slice[16], kind[16];
 } line_t;
@@ -755,110 +745,160 @@ static void hit(line_t *l, int s, int slice, int kind)
     l->kind[s] = (uint8_t)kind;
 }
 
-/* the character's whole bar */
-static void make(line_t *l, int chr)
+static void clear_line(line_t *l)
 {
-    int ns = nsl();
     for (int s = 0; s < 16; s++) {
         l->on[s] = 0;
         l->slice[s] = (uint8_t)cover_at(s);
         l->kind[s] = BM_V_PLAIN;
     }
-    switch (chr) {
-    case BM_C_STRAIGHT: {               /* the break, a few swaps (off the beat where it can) */
-        int at[16], na = 0, nb = 0;
-        for (int s = 0; s < 16; s++)
-            if (starts_at(s) >= 0) {
-                hit(l, s, starts_at(s), BM_V_PLAIN);
-                if (s & 3)
-                    at[na++] = s;
-            }
-        if (!na)                        /* (cut in beats: any but the first) */
-            for (int s = 1; s < 16; s++)
-                if (starts_at(s) >= 0)
-                    at[na++] = s;
-        for (int i = 0, n = 2 + rr(2); i < n && na > 0 && nb < 3; i++, nb++) {
-            int s = at[rr(na)];
-            int t = typed() ? BM->type[l->slice[s]] : BM_T_HAT;
-            hit(l, s, pick(t, rr(ns)), BM_V_PLAIN);
-        }
-        break;
-    }
-    case BM_C_SPARSE:                   /* kick and snare, room between */
-        hit(l, 0, kick(), BM_V_PLAIN);
-        hit(l, 4, snare(), BM_V_PLAIN);
-        hit(l, chance(50) ? 10 : 8, kick(), BM_V_PLAIN);
-        hit(l, 12, snare(), BM_V_PLAIN);
-        if (chance(50))
-            hit(l, 2 * rr(8) + 1, hat(7), BM_V_GHOST);
-        break;
-    case BM_C_BOOMBAP:                  /* kick doubles, heavy snare on 2 and 4, 8th hats */
-        for (int s = 2; s < 16; s += 4)
-            hit(l, s, hat(s), BM_V_PLAIN);
-        hit(l, 0, kick(), BM_V_PLAIN);
-        hit(l, chance(50) ? 7 : 3, kick(), BM_V_PLAIN);
-        hit(l, 8, kick(), BM_V_PLAIN);
-        hit(l, chance(60) ? 10 : 11, kick(), BM_V_PLAIN);
-        hit(l, 4, snare(), BM_V_PLAIN);
-        hit(l, 12, snare(), BM_V_PLAIN);
-        break;
-    case BM_C_HALFTIME:                 /* snare on 3 */
-        for (int s = 2; s < 16; s += 2)
-            hit(l, s, hat(s), BM_V_PLAIN);
-        hit(l, 0, kick(), BM_V_PLAIN);
-        if (chance(60))
-            hit(l, 6, kick(), BM_V_PLAIN);
-        hit(l, 8, snare(), BM_V_PLAIN);
-        if (chance(50))
-            hit(l, 14, ghost(14), BM_V_GHOST);
-        break;
-    case BM_C_TWOSTEP:                  /* kick on 1 and the "and" of 3, snares on 2 and 4 */
-        for (int s = 2; s < 16; s += 2)
-            hit(l, s, hat(s), BM_V_PLAIN);
-        hit(l, 0, kick(), BM_V_PLAIN);
-        hit(l, 10, kick(), BM_V_PLAIN);
-        hit(l, 4, snare(), BM_V_PLAIN);
-        hit(l, 12, snare(), BM_V_PLAIN);
-        if (chance(60))
-            hit(l, chance(50) ? 7 : 15, ghost(7), BM_V_GHOST);
-        break;
-    case BM_C_JUNGLE: {                 /* shuffled kicks, ghosts, a snare roll before the bar's end */
-        static const uint8_t KS[5] = {2, 3, 10, 11, 13};
-        for (int s = 1; s < 16; s += 2)
-            hit(l, s, hat(s), BM_V_PLAIN);
-        hit(l, 0, kick(), BM_V_PLAIN);
-        hit(l, KS[rr(5)], kick(), BM_V_PLAIN);
-        hit(l, KS[rr(5)], kick(), BM_V_PLAIN);
-        hit(l, 4, snare(), BM_V_PLAIN);
-        hit(l, 12, snare(), BM_V_PLAIN);
-        static const uint8_t GS[5] = {6, 7, 9, 14, 15};
-        for (int i = 0, n = 2 + rr(2); i < n; i++) {
-            int s = GS[rr(5)];
-            hit(l, s, ghost(s), BM_V_GHOST);
-        }
-        if (chance(60))
-            hit(l, 14 + rr(2), snare(), chance(50) ? BM_V_ROLL3 : BM_V_ROLL4);
-        break;
-    }
-    case BM_C_FILLS:                    /* the break, then a busy last quarter */
-        for (int s = 0; s < 12; s++)
-            if (starts_at(s) >= 0)
-                hit(l, s, starts_at(s), BM_V_PLAIN);
-        for (int s = 12; s < 16; s++) {
-            static const uint8_t K[4] = {BM_V_PLAIN, BM_V_ROLL2, BM_V_ROLL3, BM_V_REVERSE};
-            hit(l, s, chance(70) ? snare() : kick(), K[rr(4)]);
-        }
-        break;
-    default: {                          /* BREAKCORE: anything, dense, rolls and reverses */
-        static const uint8_t K[8] = {BM_V_PLAIN, BM_V_PLAIN, BM_V_PLAIN, BM_V_ROLL2, BM_V_ROLL3, BM_V_ROLL4,
+}
+
+static const uint8_t WILD_KIND[8] = {BM_V_PLAIN, BM_V_PLAIN, BM_V_PLAIN, BM_V_ROLL2, BM_V_ROLL3, BM_V_ROLL4,
                                      BM_V_REVERSE, BM_V_REVROLL};
-        for (int s = 0; s < 16; s++)
-            if (s == 0 || chance(85))
-                hit(l, s, s == 0 ? kick() : rr(ns), s == 0 ? BM_V_PLAIN : K[rr(8)]);
-        break;
+
+/* The bar is built from phrases, as a break is chopped by hand: a phrase starts on a slice and the
+ * break plays on from there (the slices after it, in order) until the next phrase. Each character
+ * has a few shapes (bit s: a phrase starts on step s), what each phrase starts on, and its extras.
+ * The cut sets where a phrase may start: any step (16), the eighths (8), the beats (4; Jungle and
+ * Breakcore the eighths too: a beat starting off the beat), the hits (Auto) */
+#define B(a) (1u << (a))
+static const uint16_t SHAPES[BM_NCHAR][4] = {
+    /* Straight: long, one or two moved */
+    {B(0) | B(8), B(0) | B(4) | B(8), B(0) | B(8) | B(12), B(0) | B(12)},
+    /* Sparse: half bars, or the backbeat */
+    {B(0) | B(8), B(0) | B(4) | B(8) | B(12), B(0) | B(8) | B(12), B(0) | B(4) | B(8)},
+    /* Boom bap: the kick doubled before 3 or 4 */
+    {B(0) | B(6) | B(8), B(0) | B(8) | B(14), B(0) | B(6) | B(8) | B(14), B(0) | B(4) | B(8) | B(12)},
+    /* Halftime: the snare on 3 */
+    {B(0) | B(8), B(0) | B(6) | B(8), B(0) | B(8) | B(14), B(0) | B(4) | B(8)},
+    /* Two-step: kick 1 and the "and" of 3, snares 2 and 4 */
+    {B(0) | B(4) | B(10) | B(12), B(0) | B(4) | B(8) | B(10) | B(12), B(0) | B(4) | B(10) | B(12) | B(14),
+     B(0) | B(4) | B(6) | B(10) | B(12)},
+    /* Jungle: 3 + 3 + 2 */
+    {B(0) | B(3) | B(6) | B(8) | B(12) | B(14), B(0) | B(6) | B(8) | B(11) | B(14),
+     B(0) | B(4) | B(6) | B(10) | B(12), B(0) | B(3) | B(6) | B(8) | B(11) | B(12) | B(14)},
+    /* Fills: the break, then short pieces */
+    {B(0) | B(12) | B(13) | B(14) | B(15), B(0) | B(8) | B(12) | B(13) | B(14) | B(15),
+     B(0) | B(12) | B(14), B(0) | B(8) | B(12) | B(14) | B(15)},
+    /* Breakcore: drawn each time */
+    {0, 0, 0, 0},
+};
+
+/* where a phrase may start: the step at or before s on the cut's grid */
+static int snap(int s, int chr)
+{
+    int cut = BM->ready ? BM->cut : BM_CUT_16;
+    if (cut == BM_CUT_AUTO) {
+        while (s > 0 && starts_at(s) < 0)
+            s--;
+        return s;
     }
+    int g = cut == BM_CUT_8 ? 2 : cut == BM_CUT_4 ? 4 : 1;
+    if (g == 4 && (chr == BM_C_JUNGLE || chr == BM_C_BREAKCORE))
+        g = 2;
+    return s - s % g;
+}
+
+/* a slice of kind t but not `avoid` (else any other, if there is one) */
+static int other(int t, int avoid)
+{
+    int ns = nsl();
+    for (int i = 0; i < 4; i++) {
+        int s = typed() ? pick(t, avoid) : rr(ns);
+        if (s != avoid)
+            return s;
+    }
+    return ns > 1 ? wrap_n(avoid + 1 + rr(ns - 1), ns) : avoid;
+}
+
+/* what the phrase starting on step t starts on */
+static int source(int chr, int t)
+{
+    int home = cover_at(t), ns = nsl();
+    switch (chr) {
+    case BM_C_STRAIGHT:                 /* the break's own, or one of its kind */
+        return t == 0 || chance(40) ? home : other(typed() ? BM->type[home] : BM_T_HAT, home);
+    case BM_C_HALFTIME:
+        return t == 8 ? snare() : kick();   /* (no snare but on 3) */
+    case BM_C_JUNGLE:
+        return t == 0 ? kick() : (t & 7) == 4 ? snare() : chance(30) ? home : rr(ns);
+    case BM_C_FILLS:
+        return t < 12 ? home : chance(70) ? snare() : kick();
+    case BM_C_BREAKCORE:
+        return t == 0 ? kick() : rr(ns);
+    default:                            /* Sparse, Boom bap, Two-step: kicks 1 and 3, snares 2 and 4 */
+        if ((t & 7) == 0)
+            return t == 0 || chr == BM_C_SPARSE || chance(70) ? kick() : home;
+        if ((t & 7) == 4)
+            return snare();
+        return kick();                  /* (Boom bap's double, Two-step's "and" of 3) */
     }
 }
+
+static void make(line_t *l, int chr)
+{
+    int ns = nsl(), shape = SHAPES[chr][rr(4)];
+    if (chr == BM_C_BREAKCORE)
+        for (int s = 1; s < 16; s++)
+            if (chance(45))
+                shape |= B(s);
+    if (chr == BM_C_STRAIGHT && !chance(70))
+        shape |= B(4 + 2 * rr(6));      /* (now and then a shorter piece) */
+    int starts = 0;
+    for (int s = 0; s < 16; s++)
+        if (shape >> s & 1)
+            starts |= 1 << snap(s, chr);
+    starts |= 1;
+    clear_line(l);
+    int from = 0, src = 0, last = 0, moved = 0;
+    for (int t = 0; t < 16; t++) {
+        if (starts >> t & 1) {          /* a phrase starts */
+            from = last = t;
+            src = source(chr, t);
+            int kind = BM_V_PLAIN;
+            if (chr == BM_C_FILLS && t >= 12)
+                kind = (int)WILD_KIND[3 + rr(5)];
+            else if (chr == BM_C_BREAKCORE && t)
+                kind = (int)WILD_KIND[rr(8)];
+            moved |= src != cover_at(t) || kind != BM_V_PLAIN;
+            hit(l, t, src, kind);
+            continue;
+        }
+        if (starts_at(t) < 0)
+            continue;                   /* inside a slice */
+        int sl = wrap_n(src + cover_at(t) - cover_at(from), ns), ty = typed() ? BM->type[sl] : -1;
+        if (chr == BM_C_HALFTIME && ty == BM_T_SNARE && (t < 6 || t > 10)) {
+            from = last = t;            /* no snare but the one on 3: a new phrase */
+            src = sl = other(chance(50) ? BM_T_KICK : BM_T_HAT, sl);
+        }
+        if (chr == BM_C_SPARSE && (ty == BM_T_HAT || ty == BM_T_GHOST))
+            continue;                   /* room (CHOP; RUN: the break plays on) */
+        int kind = BM_V_PLAIN;
+        if (chr == BM_C_JUNGLE && (ty == BM_T_HAT || ty == BM_T_GHOST) && chance(40))
+            kind = BM_V_GHOST;
+        else if (chr == BM_C_BREAKCORE && chance(25))
+            kind = (int)WILD_KIND[rr(8)];
+        hit(l, t, sl, kind);
+    }
+    if (chr == BM_C_JUNGLE && last && chance(60))           /* the last phrase rolled */
+        l->kind[last] = (uint8_t)(chance(50) ? BM_V_ROLL3 : BM_V_ROLL4);
+    if (chr == BM_C_STRAIGHT && !moved) {                   /* at least one piece moved */
+        int t = 15;
+        while (t > 0 && !(starts >> t & 1))
+            t--;
+        if (!t)
+            t = snap(8, chr);
+        if (t) {
+            int sl = other(typed() ? BM->type[cover_at(t)] : BM_T_HAT, cover_at(t));
+            for (int u = t; u < 16 && (u == t || !(starts >> u & 1)); u++)
+                if (u == t || l->on[u])
+                    l->slice[u] = (uint8_t)wrap_n(sl + cover_at(u) - cover_at(t), ns);
+            hit(l, t, sl, BM_V_PLAIN);
+        }
+    }
+}
+#undef B
 
 static uint8_t *track_block(int v)
 {

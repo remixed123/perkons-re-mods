@@ -16,7 +16,8 @@ playing as a running loop locked to the sequencer. You chop it by programming th
 * **11 pads**, while held, on the clock: rolls, reverse, freeze, half speed, tape stop, gate,
   random, filter throw, stutter.
 * **A generator** that knows the break's kicks, snares and hats: eight characters from Straight
-  to Breakcore write a new pattern into the voice's track, as ordinary steps you can edit.
+  to Breakcore chop the break into phrases and write a new pattern into the voice's track, as
+  ordinary steps you can edit.
 * **Chop mode** for building new beats from the break's hits.
 * **Very light on the processor**: about as much as a stock voice.
 
@@ -131,6 +132,8 @@ Each voice playing BREAK MAKER has its own configuration page. To open it, eithe
 The trigger keys still play the voices while the page is open. **SHUFFLE** goes back to the main
 page; **SHIFT**, **KIT** or **MOD** to the engine page.
 
+![The configuration page: breaks on row 1, pads and step types on row 2, slices on row 3, the generator's character, pitch, cut and pattern actions on row 4](docs/configuration-page.png)
+
 | row | steps | what they do |
 |---|---|---|
 | 1 | 1-16 | **The break**: `BREAKS/1.wav` to `16.wav`. Dim: on the card; bright: the kit's |
@@ -160,25 +163,37 @@ page; **SHIFT**, **KIT** or **MOD** to the engine page.
 
 BREAK MAKER sorts the break's slices into **kicks, snares, hats and ghost notes** when it loads,
 so the generator can put them where they belong. A press on **New pattern** writes a whole bar
-into the voice's track, in the character chosen:
+into the voice's track, in the character chosen.
+
+It chops the way breaks are chopped by hand: the bar is built from **phrases** of different
+lengths. A phrase starts on a slice and the break plays on from there, slice after slice, until
+the next phrase: half a bar from one place, a beat from another, three sixteenths, a quick roll.
 
 | character | |
 |---|---|
-| **Straight** | the break, with a few swaps |
-| **Sparse** | mostly kick and snare, with room between: leaves space for the other voices |
-| **Boom bap** | kick doubles, heavy snare on 2 and 4, sparse hats (slower breaks) |
-| **Halftime** | the snare on 3 |
+| **Straight** | long phrases: the break, with a piece or two moved |
+| **Sparse** | kick and snare phrases, half a bar or a beat long, without the hats and ghost notes (in CHOP): leaves space for the other voices |
+| **Boom bap** | kick phrases on 1 and 3, snares on 2 and 4, a doubled kick before 3 or 4 (slower breaks) |
+| **Halftime** | the snare on 3 only |
 | **Two-step** | drum & bass: kick on 1 and the "and" of 3, snares on 2 and 4 |
-| **Jungle** | shuffled kicks, ghost snares, a snare roll before the bar's end |
-| **Fills** | the break, then a busy last quarter |
-| **Breakcore** | anything, dense, rolls and reverses |
+| **Jungle** | short phrases in 3 + 3 + 2, ghost notes, the last phrase rolled |
+| **Fills** | the break, then short pieces rolled and reversed in the last quarter |
+| **Breakcore** | anything, many short pieces, rolls and reverses |
+
+**The cut sets where a phrase can start**, not how long it is:
+
+* **16**: on any sixteenth.
+* **8**: on the eighths, so each slice plays whole.
+* **4**: on the beats: two-beat phrases, a beat moved, a beat repeated. Jungle and Breakcore can
+  also start a beat on the "and", for syncopation.
+* **Auto**: on the drummer's hits, so the drummer's timing is kept.
 
 * **Keep rhythm** draws new slices for the steps that are on.
 * **Vary** changes a few of them.
 * **Clear** removes them: the break plays straight.
-* In **RUN** and **GENERATE**, the generator only writes the steps where the break must jump or
-  play differently, so the steps stay readable. In **CHOP** it writes every hit, and the
-  characters' gaps are silent.
+* In **RUN** and **GENERATE**, the generator only writes the steps where a phrase starts or a
+  step plays differently, so the steps stay readable. In **CHOP** it writes every hit of each
+  phrase, and the characters' gaps are silent.
 
 What it writes is an ordinary Pērkons pattern: you see it on the steps, LAST sets its length, and
 it's saved with the pattern. If a break has no clear kick or snare, the generator places slices

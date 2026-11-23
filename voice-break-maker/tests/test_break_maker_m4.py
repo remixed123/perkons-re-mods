@@ -180,6 +180,80 @@ class TestBreakMakerM4(unittest.TestCase):
             self.assertEqual(k[bar[12][0]], SNARE, algo)
             self.assertEqual(k[bar[10][0]], KICK, algo)
 
+    def on_steps(self, r):
+        blk = r.block(VOICE)
+        return [s for s in range(16) if r.e.r8(blk + 8 * s) == 1]
+
+    def test_cut_in_8_characters_stay_on_the_eighths(self):
+        r = self.rig()
+        self.load(r)
+        self.cycle_cut(r)
+        for chr_ in range(8):
+            for algo in (RUN, CHOP):
+                for _ in range(3):
+                    self.generate(r, chr_, algo=algo)
+                    self.assertEqual([s for s in self.on_steps(r) if s % 2], [], (chr_, algo))
+
+    def test_cut_in_4_phrases_start_on_the_beats(self):
+        r = self.rig()
+        self.load(r)
+        self.cycle_cut(r, 2)
+        beat_kind = [self.kinds[t] for t in (0, 4, 8, 12)]         # kick, snare, hat, snare
+        for chr_ in range(8):
+            grid = 2 if chr_ in (5, 7) else 4                       # Jungle, Breakcore: the eighths too
+            for algo in (RUN, CHOP):
+                self.generate(r, chr_, algo=algo)
+                self.assertEqual([s for s in self.on_steps(r) if s % grid], [], (chr_, algo))
+        bar = self.generate(r, 1, algo=CHOP)                         # Sparse: the bare backbeat
+        self.assertEqual([beat_kind[bar[t][0]] for t in (0, 4, 8, 12)], [KICK, SNARE, KICK, SNARE])
+        for _ in range(4):
+            bar = self.generate(r, 3, algo=CHOP)                     # Halftime: the snare on 3 only
+            self.assertEqual([beat_kind[bar[t][0]] == SNARE for t in (0, 4, 8, 12)],
+                             [False, False, True, False])
+
+    def test_phrases_run_on(self):
+        """A phrase plays the slices after its first in order: some bars hold a moved piece longer
+        than one beat (not a new slice on every beat)"""
+        r = self.rig()
+        self.load(r)
+        for cuts, chr_ in ((0, 0), (0, 2), (2, 0), (2, 2), (2, 5)):
+            self.cycle_cut(r, cuts) if cuts else None
+            n, steps = cut(r)
+            per_beat = n // 4
+            found = False
+            for _ in range(12):
+                bar = self.generate(r, chr_, algo=RUN)
+                r.ms += 37
+                for b in range(1, 4):                                # a beat carrying on a moved one
+                    a, c = bar[4 * b - 4][0], bar[4 * b][0]
+                    home = (4 * b - 4) * n // 16
+                    if a != home and c == (a + per_beat) % n:
+                        found = True
+            self.assertTrue(found, (cuts, chr_))
+            if cuts:
+                self.cycle_cut(r, 4 - cuts)                          # back to 16
+
+    def test_auto_keeps_the_drummers_timing(self):
+        only = [0, 3, 4, 7, 8, 10, 12, 14]
+        drums, kinds, _ = drum_break(offset=100, only=only)
+        r = self.rig({'BREAKS/1.wav': wav(drums)})
+        self.load(r)
+        self.cycle_cut(r, 3)
+        n, steps = cut(r)
+        self.assertEqual(steps, only)
+        types = ctrl(r)[2][:n]
+        for chr_ in (0, 2, 4, 5):                   # Straight, Boom bap, Two-step, Jungle
+            for _ in range(3):
+                self.generate(r, chr_, algo=CHOP)
+                self.assertEqual(self.on_steps(r), only, chr_)
+        bar = self.generate(r, 4, algo=CHOP)        # Two-step's phrases start on hits of their kind
+        self.assertEqual([types[bar[s][0]] for s in (0, 4, 10, 12)], [KICK, SNARE, KICK, SNARE])
+        bar = self.generate(r, 1, algo=CHOP)        # Sparse: no hats or ghosts
+        self.assertTrue(all(types[x[0]] in (KICK, SNARE) for x in bar if x), bar)
+        for chr_ in range(8):                       # RUN: triggers only on the hits' steps
+            self.generate(r, chr_, algo=RUN)
+            self.assertTrue(set(self.on_steps(r)) <= set(only), chr_)
+
     def test_cue_points_when_there_are_16(self):
         cues = [0] + [i * 4000 + 37 for i in range(1, 16)]
         r = self.rig({'BREAKS/1.wav': wav(self.drums, cues=cues)})
@@ -454,8 +528,7 @@ class TestBreakMakerM4(unittest.TestCase):
             self.assertEqual(kinds[bar[10][0]], KICK, algo)
             self.assertEqual(kinds[bar[4][0]], SNARE, algo)
             self.assertEqual(kinds[bar[12][0]], SNARE, algo)
-        self.assertIsNone(bar[1])           # CHOP: the off steps are off
-        self.assertEqual(kinds[bar[2][0]], HAT)
+        self.assertEqual([s for s in range(16) if bar[s] is None], [])  # CHOP: the phrases play on
 
     def test_run_writes_triggers_only_where_needed(self):
         r = self.rig()
