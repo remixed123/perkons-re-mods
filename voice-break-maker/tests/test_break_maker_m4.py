@@ -140,25 +140,11 @@ class TestBreakMakerM4(unittest.TestCase):
         self.cycle_cut(r)
         self.assertEqual(cut(r), (4, [0, 4, 8, 12]))
         self.assertEqual(ctrl(r)[0][2], gen)         # not loaded again
-        self.cycle_cut(r)                            # Auto: a hit on every step
+        self.cycle_cut(r)                            # Mix: 16 slices
         self.assertEqual(cut(r), (16, list(range(16))))
         self.assertEqual(r.e.r8(BM_BASE + 111), 3)
         self.cycle_cut(r)                            # 16 again
         self.assertEqual((cut(r)[0], r.e.r8(BM_BASE + 111)), (16, 0))
-
-    def test_auto_cuts_a_slice_per_hit(self):
-        only = [0, 3, 4, 7, 8, 10, 12, 14]
-        for off in (150, -150):                     # the hits late, then early
-            drums, kinds, hits = drum_break(offset=off, only=only)
-            r = self.rig({'BREAKS/1.wav': wav(drums)})
-            self.load(r)
-            self.cycle_cut(r, 3)
-            n, steps = cut(r)
-            _, sl, types, _ = ctrl(r)
-            self.assertEqual(steps, only, off)
-            for i in range(1, n):
-                self.assertLess(abs(sl[i] - hits[only[i]]), 48, (off, i))
-            self.assertEqual(types[:n], [kinds[t] for t in only], off)
 
     def test_the_cut_is_kept_with_the_kit(self):
         r = self.rig()
@@ -194,16 +180,15 @@ class TestBreakMakerM4(unittest.TestCase):
                     self.generate(r, chr_, algo=algo)
                     self.assertEqual([s for s in self.on_steps(r) if s % 2], [], (chr_, algo))
 
-    def test_cut_in_4_phrases_start_on_the_beats(self):
+    def test_cut_in_4_plays_whole_beats(self):
         r = self.rig()
         self.load(r)
         self.cycle_cut(r, 2)
         beat_kind = [self.kinds[t] for t in (0, 4, 8, 12)]         # kick, snare, hat, snare
         for chr_ in range(8):
-            grid = 2 if chr_ in (5, 7) else 4                       # Jungle, Breakcore: the eighths too
             for algo in (RUN, CHOP):
                 self.generate(r, chr_, algo=algo)
-                self.assertEqual([s for s in self.on_steps(r) if s % grid], [], (chr_, algo))
+                self.assertTrue(set(self.on_steps(r)) <= {0, 4, 8, 12}, (chr_, algo))
         bar = self.generate(r, 1, algo=CHOP)                         # Sparse: the bare backbeat
         self.assertEqual([beat_kind[bar[t][0]] for t in (0, 4, 8, 12)], [KICK, SNARE, KICK, SNARE])
         for _ in range(4):
@@ -211,48 +196,34 @@ class TestBreakMakerM4(unittest.TestCase):
             self.assertEqual([beat_kind[bar[t][0]] == SNARE for t in (0, 4, 8, 12)],
                              [False, False, True, False])
 
-    def test_phrases_run_on(self):
-        """A phrase plays the slices after its first in order: some bars hold a moved piece longer
-        than one beat (not a new slice on every beat)"""
+    def pieces(self, bar):
+        """The bar as runs of slices in order: [(step, first slice, steps)]."""
+        out = []
+        for s, x in enumerate(bar):
+            if out and x is not None and bar[s - 1] is not None and x[0] == (bar[s - 1][0] + 1) % 16:
+                out[-1][2] += 1
+            elif x is not None:
+                out.append([s, x[0], 1])
+        return out
+
+    def test_mix_plays_pieces_of_1_2_and_4_steps(self):
         r = self.rig()
         self.load(r)
-        for cuts, chr_ in ((0, 0), (0, 2), (2, 0), (2, 2), (2, 5)):
-            self.cycle_cut(r, cuts) if cuts else None
-            n, steps = cut(r)
-            per_beat = n // 4
-            found = False
-            for _ in range(12):
-                bar = self.generate(r, chr_, algo=RUN)
-                r.ms += 37
-                for b in range(1, 4):                                # a beat carrying on a moved one
-                    a, c = bar[4 * b - 4][0], bar[4 * b][0]
-                    home = (4 * b - 4) * n // 16
-                    if a != home and c == (a + per_beat) % n:
-                        found = True
-            self.assertTrue(found, (cuts, chr_))
-            if cuts:
-                self.cycle_cut(r, 4 - cuts)                          # back to 16
-
-    def test_auto_keeps_the_drummers_timing(self):
-        only = [0, 3, 4, 7, 8, 10, 12, 14]
-        drums, kinds, _ = drum_break(offset=100, only=only)
-        r = self.rig({'BREAKS/1.wav': wav(drums)})
-        self.load(r)
         self.cycle_cut(r, 3)
-        n, steps = cut(r)
-        self.assertEqual(steps, only)
-        types = ctrl(r)[2][:n]
-        for chr_ in (0, 2, 4, 5):                   # Straight, Boom bap, Two-step, Jungle
-            for _ in range(3):
-                self.generate(r, chr_, algo=CHOP)
-                self.assertEqual(self.on_steps(r), only, chr_)
-        bar = self.generate(r, 4, algo=CHOP)        # Two-step's phrases start on hits of their kind
-        self.assertEqual([types[bar[s][0]] for s in (0, 4, 10, 12)], [KICK, SNARE, KICK, SNARE])
-        bar = self.generate(r, 1, algo=CHOP)        # Sparse: no hats or ghosts
-        self.assertTrue(all(types[x[0]] in (KICK, SNARE) for x in bar if x), bar)
-        for chr_ in range(8):                       # RUN: triggers only on the hits' steps
-            self.generate(r, chr_, algo=RUN)
-            self.assertTrue(set(self.on_steps(r)) <= set(only), chr_)
+        self.assertEqual(cut(r), (16, list(range(16))))
+        self.assertEqual(r.e.r8(BM_BASE + 111), 3)
+        lens = {0: set(), 5: set(), 7: set()}
+        for _ in range(10):
+            for chr_ in lens:
+                bar = self.generate(r, chr_, algo=CHOP)
+                r.ms += 37
+                for s, q, n in self.pieces(bar):
+                    lens[chr_].add(min(n, 4))
+                    if s % 2:                                # off the eighth: only 1-step pieces
+                        self.assertTrue(n == 1 or bar[s + 1][0] == (q + 1) % 16, (chr_, bar))
+        self.assertIn(4, lens[0])                                    # Straight: beats
+        self.assertTrue({1, 2} <= lens[5], lens[5])                  # Jungle: short pieces
+        self.assertIn(1, lens[7])                                    # Breakcore: single steps
 
     def test_cue_points_when_there_are_16(self):
         cues = [0] + [i * 4000 + 37 for i in range(1, 16)]
@@ -528,7 +499,6 @@ class TestBreakMakerM4(unittest.TestCase):
             self.assertEqual(kinds[bar[10][0]], KICK, algo)
             self.assertEqual(kinds[bar[4][0]], SNARE, algo)
             self.assertEqual(kinds[bar[12][0]], SNARE, algo)
-        self.assertEqual([s for s in range(16) if bar[s] is None], [])  # CHOP: the phrases play on
 
     def test_run_writes_triggers_only_where_needed(self):
         r = self.rig()

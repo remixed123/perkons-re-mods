@@ -16,7 +16,7 @@ playing as a running loop locked to the sequencer. You chop it by programming th
 * **11 pads**, while held, on the clock: rolls, reverse, freeze, half speed, tape stop, gate,
   random, filter throw, stutter.
 * **A generator** that knows the break's kicks, snares and hats: eight characters from Straight
-  to Breakcore chop the break into phrases and write a new pattern into the voice's track, as
+  to Breakcore rearrange pieces of the bar (a step, two steps, a beat, or mixed) and write a new pattern into the voice's track, as
   ordinary steps you can edit.
 * **Chop mode** for building new beats from the break's hits.
 * **Very light on the processor**: about as much as a stock voice.
@@ -79,7 +79,7 @@ PLAY: the break plays. Open the configuration page, press **Jungle** (row 4, ste
 | control | what it does |
 |---|---|
 | **TUNE** | **Pitch** in semitones, up to an octave either way. At 12 o'clock the break plays as recorded (at the Pērkons's tempo). How pitch works (speed or keep length) is set on the page. A step's note transposes it too (MIDI note 36: no change) |
-| **DECAY** | **Gate**: how much of each step sounds, from a tight chop to all of it. At the top (from about 95%) there's no gate: the break runs on. In CHOP mode: how long each hit lasts, up to four steps, or until the next one at the top |
+| **DECAY** | **Gate**: how much of each slice sounds, from a tight chop to all of it. At the top (from about 95%) there's no gate: the break runs on. **Start fully right**, and turn it down for a chopped sound: with the cut at 16 a slice is only a step long, so the gate shortens every hit. In CHOP mode: how long each hit lasts, up to four steps, or until the next one at the top |
 | **PARAM1** | Its job depends on MODE (below). Lock it on steps to use it on just those steps |
 | **PARAM2** | **The slice a trigger plays.** Fully left: the slice where the step is, from that step (the break in place); then a zone for each slice. Lock it on a step (hold the step and turn it) to make that step jump |
 | **ALGO** | How the break plays (positions top to bottom):<br>1: **RUN**: the break loops; a trigger jumps and the break carries on from there<br>2: **GENERATE**: RUN, and the steps without a trigger may play other slices, a little different each bar, busier every fourth bar<br>3: **CHOP**: only triggers play, each its slice, silent after the gate |
@@ -97,9 +97,9 @@ saved with the kit. You can change it while the break plays: it's cut again at o
 | **16** | a sixteenth each, one a step | bright |
 | **8** | an eighth each (2 steps): the classic Amen chop | medium |
 | **4** | a beat each (4 steps) | dim |
-| **Auto** | **one per drum hit**: each step with a hit starts a slice, which lasts until the next hit, however many steps that is | blinking |
+| **Mix** | 16 slices, but the generator plays them in **pieces of 1, 2 or 4 steps, mixed in the same bar** | blinking |
 
-With 16, 8 and 4, each cut is moved onto the drum hit nearest it, so each slice starts on its hit
+Each cut is moved onto the drum hit nearest it, so each slice starts on its hit
 even if the drummer was a little early or late. A slice starts on its own step and plays on
 through the steps it covers; a trigger inside a slice jumps from there. PARAM2's zones follow the
 cut (fewer slices, wider zones), so a locked step keeps about its place in the bar when you
@@ -142,7 +142,7 @@ page; **SHIFT**, **KIT** or **MOD** to the engine page.
 | 3 | 1-16 | **Slices** (as many as the cut has): with held steps, their slice (a lock on PARAM2); without, hear it. Brighter: the kicks and snares |
 | 4 | 1-8 | **The generator's character**: Straight, Sparse, Boom bap, Halftime, Two-step, Jungle, Fills, Breakcore |
 | 4 | 9-10 | **Pitch**: speed (pitch and speed together, as a sampler) or keep length (pitch without changing the slices' length) |
-| 4 | 11 | **The cut**: each press the next, 16, 8, 4, Auto ([the cut](#the-cut)) |
+| 4 | 11 | **The cut**: each press the next, 16, 8, 4, Mix ([the cut](#the-cut)) |
 | 4 | 13-16 | **New pattern**, **Keep rhythm**, **Vary**, **Clear** (on release). **Hold** any of them for half a second to undo the last |
 
 ### The pads
@@ -165,35 +165,38 @@ BREAK MAKER sorts the break's slices into **kicks, snares, hats and ghost notes*
 so the generator can put them where they belong. A press on **New pattern** writes a whole bar
 into the voice's track, in the character chosen.
 
-It chops the way breaks are chopped by hand: the bar is built from **phrases** of different
-lengths. A phrase starts on a slice and the break plays on from there, slice after slice, until
-the next phrase: half a bar from one place, a beat from another, three sixteenths, a quick roll.
+It chops the way breaks are chopped: the bar is rearranged in **pieces of the bar**. The cut sets
+how long a piece is:
 
-| character | |
-|---|---|
-| **Straight** | long phrases: the break, with a piece or two moved |
-| **Sparse** | kick and snare phrases, half a bar or a beat long, without the hats and ghost notes (in CHOP): leaves space for the other voices |
-| **Boom bap** | kick phrases on 1 and 3, snares on 2 and 4, a doubled kick before 3 or 4 (slower breaks) |
-| **Halftime** | the snare on 3 only |
-| **Two-step** | drum & bass: kick on 1 and the "and" of 3, snares on 2 and 4 |
-| **Jungle** | short phrases in 3 + 3 + 2, ghost notes, the last phrase rolled |
-| **Fills** | the break, then short pieces rolled and reversed in the last quarter |
-| **Breakcore** | anything, many short pieces, rolls and reverses |
+* **16**: a step (a single hit).
+* **8**: two steps (a kick and its hat, a snare and its ghost).
+* **4**: a beat.
+* **Mix**: 1, 2 or 4 steps, mixed in the same bar.
 
-**The cut sets where a phrase can start**, not how long it is:
+A piece always comes from a place of its own length in the bar (a 2-step piece from an even step,
+a beat from a beat) and plays as it is in the break. The character says which pieces go where,
+and in Mix, how the lengths mix:
 
-* **16**: on any sixteenth.
-* **8**: on the eighths, so each slice plays whole.
-* **4**: on the beats: two-beat phrases, a beat moved, a beat repeated. Jungle and Breakcore can
-  also start a beat on the "and", for syncopation.
-* **Auto**: on the drummer's hits, so the drummer's timing is kept.
+| character | | Mix |
+|---|---|---|
+| **Straight** | the break, with one to three pieces swapped for others of their kind | mostly beats |
+| **Sparse** | kick and snare pieces on the beats, room between (in CHOP): leaves space for the other voices | beats and pairs |
+| **Boom bap** | kicks on 1 and 3, snares on 2 and 4, a doubled kick before 3 or 4 (slower breaks) | beats and pairs |
+| **Halftime** | the snare on 3 only | mostly beats |
+| **Two-step** | drum & bass: kick on 1 and the "and" of 3, snares on 2 and 4 | pairs and beats |
+| **Jungle** | snares on 2 and 4, everything else shuffled, ghost notes, the last piece rolled | pairs and single steps |
+| **Fills** | the break, then a busy last quarter, rolled and reversed | beats, then single steps |
+| **Breakcore** | anything, rolls and reverses | mostly single steps |
+
+When the break plays on from one slice into the next (a piece of 2 or 4 steps, or no jump at
+all), it isn't restarted: with DECAY up, a piece sounds as one.
 
 * **Keep rhythm** draws new slices for the steps that are on.
 * **Vary** changes a few of them.
 * **Clear** removes them: the break plays straight.
-* In **RUN** and **GENERATE**, the generator only writes the steps where a phrase starts or a
-  step plays differently, so the steps stay readable. In **CHOP** it writes every hit of each
-  phrase, and the characters' gaps are silent.
+* In **RUN** and **GENERATE**, the generator only writes the steps where a piece jumps or a
+  step plays differently, so the steps stay readable. In **CHOP** it writes every slice of each
+  piece, and the characters' gaps are silent.
 
 What it writes is an ordinary Pērkons pattern: you see it on the steps, LAST sets its length, and
 it's saved with the pattern. If a break has no clear kick or snare, the generator places slices

@@ -50,8 +50,8 @@ _Static_assert(__builtin_offsetof(bm_ctrl_t, slice) == 24 && __builtin_offsetof(
                "bm_rig.py: CTRL fields");
 
 /* how the bar is cut (the kit's, page row 4 step 11, cycling): 16, 8 or 4 slices (each cut moved
- * onto the nearest hit), or Auto (a slice per hit, up to 16) */
-enum { BM_CUT_16, BM_CUT_8, BM_CUT_4, BM_CUT_AUTO, BM_NCUT };
+ * onto the nearest hit), or Mix (16 slices; the generator plays pieces of 1, 2 or 4 of them) */
+enum { BM_CUT_16, BM_CUT_8, BM_CUT_4, BM_CUT_MIX, BM_NCUT };
 
 #define BM                  ((bm_ctrl_t *)(uintptr_t)BM_BASE)
 

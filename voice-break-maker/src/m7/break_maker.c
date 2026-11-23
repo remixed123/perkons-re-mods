@@ -439,6 +439,30 @@ static int pads_own(const bm_t *k)      /* a pad that owns the voice: the steps 
                        1u << BM_PAD_FREEZE | 1u << BM_PAD_TAPESTOP | 1u << BM_PAD_STUTTER)) != 0u;
 }
 
+/* slice s plain, where the player already is (it played the slice before it, at the break's own
+ * speed, ungated): it carries on, no restart and no crossfade, so a piece of the bar running over
+ * several slices plays as one; the new slice's gate from here */
+static int carry_on(bm_t *k, int s, int kind, float extra, float span)
+{
+    pl_t *p = &k->pl[k->cur];
+    if (!p->active || p->amp_to < 1.0f || p->dir < 0.0f || p->len > 0.0f || p->gain != 1.0f ||
+        kind != BM_V_PLAIN || p->ratio != exp2f_((k->semis + extra) * (1.0f / 12.0f)))
+        return 0;
+    float nf = (float)BM->frames, d = p->pos - (float)BM->slice[s], tol = nf * (1.0f / 64.0f);
+    if (d > 0.5f * nf)
+        d -= nf;
+    else if (d < -0.5f * nf)
+        d += nf;
+    if (d < -tol || d > tol)
+        return 0;
+    p->gate = gate_of(k, span);
+    k->last_slice = s;
+    k->st_slice = s;
+    k->st_kind = kind;
+    k->st_count++;
+    return 1;
+}
+
 /* a step plays slice s: how (kind), transposed (extra), from step `at` of it (re-cued in place; -1:
  * its start); rolls by velocity or PARAM1 repeat its start within the step */
 static void play_step(bm_t *k, int s, int kind, float extra, int at)
@@ -465,8 +489,10 @@ static void play_step(bm_t *k, int s, int kind, float extra, int at)
     int into = at >= 0 ? at - BM->step[s] : 0, len = slice_steps(s, ns);
     if (into < 0 || into >= len)
         into = 0;
-    start(k, s, kind, extra, (float)(len - into) * k->step_len, (float)into * (float)BM->frames * (1.0f / 16.0f));
     k->roll_left = 0;
+    if (at < 0 && carry_on(k, s, kind, extra, (float)len * k->step_len))
+        return;
+    start(k, s, kind, extra, (float)(len - into) * k->step_len, (float)into * (float)BM->frames * (1.0f / 16.0f));
 }
 
 /* a step without a trigger (RUN, GENERATE): the slice starting on it (moved by the last jump), or

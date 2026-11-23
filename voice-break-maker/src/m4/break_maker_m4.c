@@ -23,7 +23,7 @@
  *           roll x2, roll x3, roll x4 (the lit one again: plain; reverse with roll x2: both)
  *   row 3   slices 1-16: with held steps, their slice (a PARAM2 lock); else heard
  *   row 4   the generator's character (1-8), pitch repitch / keep length (9-10), the cut (11, each press
- *           the next: 16, 8, 4 slices, Auto; bright, medium, dim, blinking), New pattern, Keep
+ *           the next: 16, 8, 4 slices, Mix; bright, medium, dim, blinking), New pattern, Keep
  *           rhythm, Vary, Clear (13-16: on release; held 0.5 s: undo the last of them)
  * The trigger keys play; SHIFT, KIT or MOD goes back to the engine page; SHUFFLE to the main page. */
 #include <stdint.h>
@@ -425,10 +425,10 @@ static void sort_slices(const int16_t *x, const uint32_t *sl, int n, uint8_t *ty
     }
 }
 
-/* the break cut (mode BM_CUT_*), published to the M7: 16, 8 or 4 slices, each cut moved onto a
- * hit near its grid point (within ~a third of a sixteenth, so a coarse cut can't wander onto an
- * off-beat), or its 16 cue points (every 2nd / 4th for 8 / 4); Auto: a slice on each step with a
- * hit near it (the bar's start always). Also live, on the break in RAM (a cut changed on the page: no reload). */
+/* the break cut (mode BM_CUT_*), published to the M7: 16, 8 or 4 slices (Mix: 16, the generator
+ * plays pieces of 1, 2 or 4 of them), each cut moved onto a hit near its grid point (within ~a
+ * third of a sixteenth, so a coarse cut can't wander onto an off-beat), or its 16 cue points
+ * (every 2nd / 4th for 8 / 4). Also live, on the break in RAM (a cut changed on the page: no reload). */
 static void cut_break(int mode)
 {
     const int16_t *x = (const int16_t *)(uintptr_t)BM->pcm;
@@ -442,41 +442,7 @@ static void cut_break(int mode)
         int32_t e = strength(x, N, h, hop_e(x, h - 32));
         emax = e > emax ? e : emax;
     }
-    if (mode == BM_CUT_AUTO) {
-        /* Auto: a slice on each step that has a hit near it (within 40% of a step): the level over
-         * the next ~12 ms at least 2x the last ~12 ms (a kick, a ghost, anything after quiet), or
-         * the attack energy at least 2.5x the half step before it and at least 1/20 of the bar's
-         * strongest attack (a hat or snare right after another sound). A sound's own wobbles fail
-         * both. The slice starts on the hit (as the fixed cuts) */
-        int32_t amax = 1;
-        for (int32_t h = 32; h + 32 <= N; h += 32) {
-            int32_t e = hop_e(x, h);
-            amax = e > amax ? e : amax;
-        }
-        n = 0;
-        sl[n] = 0;
-        st[n++] = 0;
-        for (int t = 1; t < 16; t++) {
-            int32_t c = t * g16, w = g16 * 2 / 5, lo = (int32_t)sl[n - 1] + g16 / 4;
-            int32_t a = c - w < lo ? lo : c - w, b = c + w;
-            a = a < 320 ? 320 : a;
-            b = b > N - JUMP_W ? N - JUMP_W : b;
-            int hit = 0;
-            for (int32_t h = a; h + 32 <= b && !hit; h += 32) {
-                int32_t e = hop_e(x, h), pre = 50;
-                for (int j = 1; j <= 8; j++)
-                    pre += hop_e(x, h - 32 * j) / 8;
-                int32_t lf = level(x, N, h, h + JUMP_W), lf_pre = level(x, N, h - JUMP_W, h) + 50;
-                hit = lf >= 2 * lf_pre || (2 * e >= 5 * pre && 20 * e >= amax);
-            }
-            if (!hit)
-                continue;
-            int32_t r, h = onset(x, N, a, b, &r);
-            int32_t at = (h >= 0 ? h + 16 : c) - 24;
-            sl[n] = (uint32_t)(at < lo ? lo : at);
-            st[n++] = (uint8_t)t;
-        }
-    } else if (cues_ok) {
+    if (cues_ok) {
         for (int i = 0; i < n; i++) {
             sl[i] = i ? cue[i * 16 / n] : 0;
             st[i] = (uint8_t)(i * 16 / n);
@@ -723,16 +689,6 @@ static int typed(void)
     return k && s;
 }
 
-static int kick(void)
-{
-    return typed() ? pick(BM_T_KICK, 0) : cover_at(chance(50) ? 0 : 8);
-}
-
-static int snare(void)
-{
-    return typed() ? pick(BM_T_SNARE, cover_at(4)) : cover_at(chance(50) ? 4 : 12);
-}
-
 /* a step of the bar: on / off, slice, kind (bm_vel_kind) */
 typedef struct {
     uint8_t on[16], slice[16], kind[16];
@@ -757,148 +713,141 @@ static void clear_line(line_t *l)
 static const uint8_t WILD_KIND[8] = {BM_V_PLAIN, BM_V_PLAIN, BM_V_PLAIN, BM_V_ROLL2, BM_V_ROLL3, BM_V_ROLL4,
                                      BM_V_REVERSE, BM_V_REVROLL};
 
-/* The bar is built from phrases, as a break is chopped by hand: a phrase starts on a slice and the
- * break plays on from there (the slices after it, in order) until the next phrase. Each character
- * has a few shapes (bit s: a phrase starts on step s), what each phrase starts on, and its extras.
- * The cut sets where a phrase may start: any step (16), the eighths (8), the beats (4; Jungle and
- * Breakcore the eighths too: a beat starting off the beat), the hits (Auto) */
-#define B(a) (1u << (a))
-static const uint16_t SHAPES[BM_NCHAR][4] = {
-    /* Straight: long, one or two moved */
-    {B(0) | B(8), B(0) | B(4) | B(8), B(0) | B(8) | B(12), B(0) | B(12)},
-    /* Sparse: half bars, or the backbeat */
-    {B(0) | B(8), B(0) | B(4) | B(8) | B(12), B(0) | B(8) | B(12), B(0) | B(4) | B(8)},
-    /* Boom bap: the kick doubled before 3 or 4 */
-    {B(0) | B(6) | B(8), B(0) | B(8) | B(14), B(0) | B(6) | B(8) | B(14), B(0) | B(4) | B(8) | B(12)},
-    /* Halftime: the snare on 3 */
-    {B(0) | B(8), B(0) | B(6) | B(8), B(0) | B(8) | B(14), B(0) | B(4) | B(8)},
-    /* Two-step: kick 1 and the "and" of 3, snares 2 and 4 */
-    {B(0) | B(4) | B(10) | B(12), B(0) | B(4) | B(8) | B(10) | B(12), B(0) | B(4) | B(10) | B(12) | B(14),
-     B(0) | B(4) | B(6) | B(10) | B(12)},
-    /* Jungle: 3 + 3 + 2 */
-    {B(0) | B(3) | B(6) | B(8) | B(12) | B(14), B(0) | B(6) | B(8) | B(11) | B(14),
-     B(0) | B(4) | B(6) | B(10) | B(12), B(0) | B(3) | B(6) | B(8) | B(11) | B(12) | B(14)},
-    /* Fills: the break, then short pieces */
-    {B(0) | B(12) | B(13) | B(14) | B(15), B(0) | B(8) | B(12) | B(13) | B(14) | B(15),
-     B(0) | B(12) | B(14), B(0) | B(8) | B(12) | B(14) | B(15)},
-    /* Breakcore: drawn each time */
-    {0, 0, 0, 0},
+/* The bar is built from pieces of the bar, as breaks are chopped. The cut says how long a piece
+ * is: 16 a step, 8 two steps, 4 a beat; Mix 1, 2 or 4 steps, mixed in one bar (the character
+ * says how). A piece comes from a place of its own length (a 2-step piece from an even step, a
+ * beat from a beat) and plays as it is in the break. The character says which piece goes where
+ * (kicks on 1 and 3, snares on 2 and 4, ...) and adds its extras. */
+enum { R_HOME, R_KICK, R_SNARE, R_NOSNARE, R_ANY, R_REST };
+
+/* the kind of the piece starting on step q: its first slice's (no kick or snare found: by its
+ * place, kick 1 and 3, snare 2 and 4) */
+static int piece_type(int q)
+{
+    if (typed())
+        return BM->type[cover_at(q)];
+    return (q & 7) == 0 ? BM_T_KICK : (q & 7) == 4 ? BM_T_SNARE : BM_T_HAT;
+}
+
+/* a piece of L steps for role r (its first step), at random; none: `home` */
+static int piece(int L, int r, int home)
+{
+    int c[16], n = 0;
+    for (int q = 0; q < 16; q += L) {
+        int t = piece_type(q);
+        if (r == R_KICK ? t == BM_T_KICK : r == R_SNARE ? t == BM_T_SNARE : r == R_NOSNARE ? t != BM_T_SNARE : 1)
+            c[n++] = q;
+    }
+    return n ? c[rr(n)] : home;
+}
+
+/* what goes on step t (a piece of L steps starts there) */
+static int role(int chr, int t, int L)
+{
+    int b = t & 7;
+    switch (chr) {
+    case BM_C_SPARSE:                   /* kick and snare, room between */
+        return b == 0 ? R_KICK : b == 4 ? R_SNARE : R_REST;
+    case BM_C_BOOMBAP:                  /* the backbeat, a doubled kick before 3 or 4 */
+        if (b == 0)
+            return R_KICK;
+        if (b == 4)
+            return R_SNARE;
+        return (t == 6 || t == 7 || t == 10 || t == 11) && chance(40) ? R_KICK : R_HOME;
+    case BM_C_HALFTIME:                 /* the snare on 3 only */
+        return t == 0 ? R_KICK : t == 8 ? R_SNARE : chance(40) ? R_NOSNARE : R_HOME;
+    case BM_C_TWOSTEP:                  /* kick 1 and the "and" of 3, snares 2 and 4 */
+        if (t == 0 || t == 10 || (t == 8 && L == 4))
+            return R_KICK;
+        if (b == 4)
+            return R_SNARE;
+        return chance(30) ? R_NOSNARE : R_HOME;
+    case BM_C_JUNGLE:                   /* snares 2 and 4, the rest shuffled */
+        return t == 0 ? R_KICK : b == 4 ? R_SNARE : chance(60) ? R_ANY : R_HOME;
+    case BM_C_FILLS:                    /* the break, then a busy last quarter */
+        return t < 12 ? R_HOME : chance(70) ? R_SNARE : R_KICK;
+    case BM_C_BREAKCORE:
+        return t == 0 ? R_KICK : R_ANY;
+    default:                            /* STRAIGHT: the break (a few pieces swapped after) */
+        return R_HOME;
+    }
+}
+
+/* Mix: how often a piece is a beat, two steps, one step (of 100), per character */
+static const uint8_t MIXW[BM_NCHAR][3] = {
+    {70, 25, 5}, {55, 45, 0}, {50, 40, 10}, {60, 30, 10}, {40, 45, 15}, {15, 50, 35}, {75, 25, 0}, {5, 30, 65},
 };
 
-/* where a phrase may start: the step at or before s on the cut's grid */
-static int snap(int s, int chr)
+static int mix_len(int chr, int t)
 {
-    int cut = BM->ready ? BM->cut : BM_CUT_16;
-    if (cut == BM_CUT_AUTO) {
-        while (s > 0 && starts_at(s) < 0)
-            s--;
-        return s;
+    int w4 = MIXW[chr][0], w2 = MIXW[chr][1], w1 = MIXW[chr][2];
+    if (chr == BM_C_FILLS && t >= 12) { /* the fill: short pieces */
+        w4 = 0;
+        w2 = 30;
+        w1 = 70;
     }
-    int g = cut == BM_CUT_8 ? 2 : cut == BM_CUT_4 ? 4 : 1;
-    if (g == 4 && (chr == BM_C_JUNGLE || chr == BM_C_BREAKCORE))
-        g = 2;
-    return s - s % g;
+    if (t & 3)
+        w4 = 0;
+    if (t & 1)
+        w2 = 0;
+    if (!w1 && !w2 && !w4)
+        w1 = 1;
+    int x = rr(w4 + w2 + w1);
+    return x < w4 ? 4 : x < w4 + w2 ? 2 : 1;
 }
 
-/* a slice of kind t but not `avoid` (else any other, if there is one) */
-static int other(int t, int avoid)
+/* the piece from step q (L steps) onto step t: the steps where its slices start */
+static void put_piece(line_t *l, int chr, int t, int L, int q, int kind)
 {
-    int ns = nsl();
-    for (int i = 0; i < 4; i++) {
-        int s = typed() ? pick(t, avoid) : rr(ns);
-        if (s != avoid)
-            return s;
-    }
-    return ns > 1 ? wrap_n(avoid + 1 + rr(ns - 1), ns) : avoid;
-}
-
-/* what the phrase starting on step t starts on */
-static int source(int chr, int t)
-{
-    int home = cover_at(t), ns = nsl();
-    switch (chr) {
-    case BM_C_STRAIGHT:                 /* the break's own, or one of its kind */
-        return t == 0 || chance(40) ? home : other(typed() ? BM->type[home] : BM_T_HAT, home);
-    case BM_C_HALFTIME:
-        return t == 8 ? snare() : kick();   /* (no snare but on 3) */
-    case BM_C_JUNGLE:
-        return t == 0 ? kick() : (t & 7) == 4 ? snare() : chance(30) ? home : rr(ns);
-    case BM_C_FILLS:
-        return t < 12 ? home : chance(70) ? snare() : kick();
-    case BM_C_BREAKCORE:
-        return t == 0 ? kick() : rr(ns);
-    default:                            /* Sparse, Boom bap, Two-step: kicks 1 and 3, snares 2 and 4 */
-        if ((t & 7) == 0)
-            return t == 0 || chr == BM_C_SPARSE || chance(70) ? kick() : home;
-        if ((t & 7) == 4)
-            return snare();
-        return kick();                  /* (Boom bap's double, Two-step's "and" of 3) */
+    for (int i = 0; i < L; i++) {
+        int u = t + i;
+        if (i && starts_at(u) < 0)
+            continue;
+        int sl = cover_at(q + i), k = i ? BM_V_PLAIN : kind;
+        int ty = typed() ? BM->type[sl] : -1;
+        if (chr == BM_C_JUNGLE && k == BM_V_PLAIN && (ty == BM_T_HAT || ty == BM_T_GHOST) && chance(40))
+            k = BM_V_GHOST;
+        else if (chr == BM_C_BREAKCORE && i && chance(25))
+            k = (int)WILD_KIND[rr(8)];
+        hit(l, u, sl, k);
     }
 }
 
 static void make(line_t *l, int chr)
 {
-    int ns = nsl(), shape = SHAPES[chr][rr(4)];
-    if (chr == BM_C_BREAKCORE)
-        for (int s = 1; s < 16; s++)
-            if (chance(45))
-                shape |= B(s);
-    if (chr == BM_C_STRAIGHT && !chance(70))
-        shape |= B(4 + 2 * rr(6));      /* (now and then a shorter piece) */
-    int starts = 0;
-    for (int s = 0; s < 16; s++)
-        if (shape >> s & 1)
-            starts |= 1 << snap(s, chr);
-    starts |= 1;
+    int cut = BM->ready ? BM->cut : BM_CUT_16;
+    int fixed = cut == BM_CUT_8 ? 2 : cut == BM_CUT_4 ? 4 : 1;
+    int at[16], len[16], np = 0;
     clear_line(l);
-    int from = 0, src = 0, last = 0, moved = 0;
-    for (int t = 0; t < 16; t++) {
-        if (starts >> t & 1) {          /* a phrase starts */
-            from = last = t;
-            src = source(chr, t);
-            int kind = BM_V_PLAIN;
-            if (chr == BM_C_FILLS && t >= 12)
-                kind = (int)WILD_KIND[3 + rr(5)];
-            else if (chr == BM_C_BREAKCORE && t)
-                kind = (int)WILD_KIND[rr(8)];
-            moved |= src != cover_at(t) || kind != BM_V_PLAIN;
-            hit(l, t, src, kind);
-            continue;
-        }
-        if (starts_at(t) < 0)
-            continue;                   /* inside a slice */
-        int sl = wrap_n(src + cover_at(t) - cover_at(from), ns), ty = typed() ? BM->type[sl] : -1;
-        if (chr == BM_C_HALFTIME && ty == BM_T_SNARE && (t < 6 || t > 10)) {
-            from = last = t;            /* no snare but the one on 3: a new phrase */
-            src = sl = other(chance(50) ? BM_T_KICK : BM_T_HAT, sl);
-        }
-        if (chr == BM_C_SPARSE && (ty == BM_T_HAT || ty == BM_T_GHOST))
-            continue;                   /* room (CHOP; RUN: the break plays on) */
-        int kind = BM_V_PLAIN;
-        if (chr == BM_C_JUNGLE && (ty == BM_T_HAT || ty == BM_T_GHOST) && chance(40))
-            kind = BM_V_GHOST;
-        else if (chr == BM_C_BREAKCORE && chance(25))
+    for (int t = 0; t < 16; t += len[np - 1]) {
+        int L = cut == BM_CUT_MIX ? mix_len(chr, t) : fixed;
+        int r = role(chr, t, L), q = t, kind = BM_V_PLAIN;
+        if (r != R_HOME && r != R_REST)
+            q = piece(L, r, t);
+        if (chr == BM_C_HALFTIME && t != 8 && piece_type(q) == BM_T_SNARE)
+            q = piece(L, R_NOSNARE, q);
+        if (chr == BM_C_FILLS && t >= 12)
+            kind = (int)WILD_KIND[3 + rr(5)];
+        else if (chr == BM_C_BREAKCORE && t)
             kind = (int)WILD_KIND[rr(8)];
-        hit(l, t, sl, kind);
+        at[np] = t;
+        len[np++] = L;
+        if (r != R_REST)
+            put_piece(l, chr, t, L, q, kind);
     }
-    if (chr == BM_C_JUNGLE && last && chance(60))           /* the last phrase rolled */
-        l->kind[last] = (uint8_t)(chance(50) ? BM_V_ROLL3 : BM_V_ROLL4);
-    if (chr == BM_C_STRAIGHT && !moved) {                   /* at least one piece moved */
-        int t = 15;
-        while (t > 0 && !(starts >> t & 1))
-            t--;
-        if (!t)
-            t = snap(8, chr);
-        if (t) {
-            int sl = other(typed() ? BM->type[cover_at(t)] : BM_T_HAT, cover_at(t));
-            for (int u = t; u < 16 && (u == t || !(starts >> u & 1)); u++)
-                if (u == t || l->on[u])
-                    l->slice[u] = (uint8_t)wrap_n(sl + cover_at(u) - cover_at(t), ns);
-            hit(l, t, sl, BM_V_PLAIN);
+    if (chr == BM_C_STRAIGHT) {         /* one to three pieces swapped for one of their kind */
+        for (int i = 0, n = 1 + rr(3); i < n && np > 1; i++) {
+            int j = 1 + rr(np - 1), t = at[j], L = len[j], home = t;
+            int q = piece(L, typed() ? (piece_type(t) == BM_T_SNARE ? R_SNARE :
+                                         piece_type(t) == BM_T_KICK ? R_KICK : R_NOSNARE) : R_ANY, home);
+            if (q == home)
+                q = (home + L) & 15;
+            put_piece(l, chr, t, L, q, BM_V_PLAIN);
         }
     }
+    if (chr == BM_C_JUNGLE && np > 1 && chance(60))         /* the last piece rolled */
+        l->kind[at[np - 1]] = (uint8_t)(chance(50) ? BM_V_ROLL3 : BM_V_ROLL4);
 }
-#undef B
 
 static uint8_t *track_block(int v)
 {
@@ -1277,7 +1226,7 @@ int pk_bm_page_key(const uint8_t *evt)
         } else if (col < 10) {                  /* pitch: repitch / keep length */
             bm_cur[1 + v] = (uint8_t)((bm_cur[1 + v] & 7) | (col == 9 ? 8 : 0));
             mark(v);
-        } else if (col == 10) {                 /* the cut: 16, 8, 4, Auto, 16 ... (the main loop cuts) */
+        } else if (col == 10) {                 /* the cut: 16, 8, 4, Mix, 16 ... (the main loop cuts) */
             int c = ((bm_cur[0] >> 4) + 1) & 3;
             bm_cur[0] = (uint8_t)((bm_cur[0] & 15) | c << 4);
         }
@@ -1329,7 +1278,7 @@ void pk_bm_page_draw(void)
             lv = col == (bm_cur[1 + v] & 7) ? LED_ON : LED_DIM;
         else if (col < 10)
             lv = (col == 9) == ((bm_cur[1 + v] >> 3) & 1) ? LED_ON : LED_DIM;
-        else if (col == 10) {                   /* the cut: 16 bright, 8 medium, 4 dim, Auto blinking */
+        else if (col == 10) {                   /* the cut: 16 bright, 8 medium, 4 dim, Mix blinking */
             static const uint8_t CUT_LED[3] = {LED_ON, LED_MID, LED_DIM};
             int c = (bm_cur[0] >> 4) & 3;
             lv = c < 3 ? CUT_LED[c] : ((fw_get_tick() >> 8) & 1 ? LED_ON : 0);

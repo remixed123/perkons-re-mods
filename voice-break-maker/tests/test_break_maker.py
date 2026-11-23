@@ -1,6 +1,7 @@
 """BREAK MAKER on the M7, through main()'s message loop and the real audio callback, as a voice-map
 engine: the running break, tempo, jumps, CHOP, the gate, velocity kinds, PARAM1's jobs, the pads,
 the live generator, pitch modes, CPU. Needs arm-none-eabi-gcc."""
+import math
 import shutil
 import tempfile
 import unittest
@@ -73,6 +74,16 @@ class TestBreakMaker(unittest.TestCase):
         self.assertEqual(self.slices(out, at), list(range(16)))
         self.assertGreater(peak(out), 4000)
 
+    def test_slices_in_a_row_play_as_one(self):
+        """Without a gate, the break running on into the next slice doesn't restart it (no
+        crossfade at each step): a steady tone stays steady."""
+        n = int(round(44100 * 240.0 / 140.0))
+        tone = [int(10000 * math.sin(2 * math.pi * 300.0 * i / 44100)) for i in range(n)]
+        e = self.bm.machine((0,), pcm=tone, starts=[int(round(i * n / 16)) for i in range(16)])
+        out, at = self.bar(e, [MID, GATE_OFF, 0, 0])
+        w = [rms(out[i:i + 480]) for i in range(at[1], len(out) - 480, 80)]      # (3 cycles)
+        self.assertGreater(min(w) / max(w), 0.97)
+
     def test_tempo_sets_the_speed(self):
         """At 175 BPM the 140 BPM break keeps its slices on the steps, a third faster (repitch)."""
         e = self.machine()
@@ -123,7 +134,7 @@ class TestBreakMaker(unittest.TestCase):
         self.assertLess(peak(out[960:]), 20)
         self.assertEqual(self.bm.status(e)[2], -1)
 
-    # -- coarser cuts: 8, 4, Auto -----------------------------------------------------------------
+    # -- coarser cuts: 8, 4, uneven -----------------------------------------------------------------
     def cut(self, every=None, steps=None):
         """The tone break cut coarser: a slice every `every` steps, or starting on `steps`."""
         steps = steps or list(range(0, 16, every))
