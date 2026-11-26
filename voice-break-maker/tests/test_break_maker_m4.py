@@ -196,6 +196,17 @@ class TestBreakMakerM4(unittest.TestCase):
             self.assertEqual([beat_kind[bar[t][0]] == SNARE for t in (0, 4, 8, 12)],
                              [False, False, True, False])
 
+    def test_straight_swaps_keep_their_kind(self):
+        r = self.rig()
+        self.load(r)
+        self.cycle_cut(r, 2)                                         # 4: kick, snare, hat, snare
+        beat_kind = [self.kinds[t] for t in (0, 4, 8, 12)]
+        for _ in range(20):
+            bar = self.generate(r, 0, algo=CHOP)
+            r.ms += 37
+            self.assertEqual([beat_kind[bar[t][0]] == SNARE for t in (0, 4, 8, 12)],
+                             [False, True, False, True], bar)
+
     def pieces(self, bar):
         """The bar as runs of slices in order: [(step, first slice, steps)]."""
         out = []

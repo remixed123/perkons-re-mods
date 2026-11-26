@@ -55,11 +55,10 @@ def make_break(rate=44100, bpm=140.0, seed=1, marks=True):
 DRUMS = {0: KICK, 10: KICK, 4: SNARE, 12: SNARE, 7: GHOST}     # the rest: hats
 
 
-def drum_break(rate=44100, bpm=140.0, seed=3, offset=0, only=None):
+def drum_break(rate=44100, bpm=140.0, seed=3, offset=0):
     """A 1-bar break of synthetic drums on 16ths: kick on 1 and the "and" of 3, snare on 2 and 4,
     a ghost snare on step 8, hats (high-passed noise) elsewhere. offset: every hit that many frames
-    late (off the grid); only: the steps with a hit (the rest silent). Returns (pcm, kind per step,
-    where each hit begins)."""
+    late (off the grid). Returns (pcm, kind per step, where each hit begins)."""
     rnd = random.Random(seed)
     n = int(round(rate * 240.0 / bpm))
     g = n / 16
@@ -70,8 +69,6 @@ def drum_break(rate=44100, bpm=140.0, seed=3, offset=0, only=None):
         kinds.append(k)
         a = int(round(s * g)) + (offset if s else 0)
         hits.append(a)
-        if only is not None and s not in only:
-            continue
         prev = 0.0
         for i in range(int(g)):
             t = i / rate

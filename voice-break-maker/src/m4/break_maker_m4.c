@@ -729,15 +729,35 @@ static int piece_type(int q)
     return (q & 7) == 0 ? BM_T_KICK : (q & 7) == 4 ? BM_T_SNARE : BM_T_HAT;
 }
 
-/* a piece of L steps for role r (its first step), at random; none: `home` */
-static int piece(int L, int r, int home)
+/* a piece of type ty suits role r */
+static int fits(int r, int ty)
+{
+    switch (r) {
+    case R_KICK:
+        return ty == BM_T_KICK;
+    case R_SNARE:
+        return ty == BM_T_SNARE;
+    case R_NOSNARE:
+        return ty != BM_T_SNARE;
+    default:
+        return 1;
+    }
+}
+
+/* the role a piece of type ty plays (for a swap of its kind) */
+static int role_of(int ty)
+{
+    return ty == BM_T_SNARE ? R_SNARE : ty == BM_T_KICK ? R_KICK : R_NOSNARE;
+}
+
+/* a piece of L steps for role r (its first step), at random, `home` itself left out if `other`;
+ * none: `home` */
+static int piece(int L, int r, int home, int other)
 {
     int c[16], n = 0;
-    for (int q = 0; q < 16; q += L) {
-        int t = piece_type(q);
-        if (r == R_KICK ? t == BM_T_KICK : r == R_SNARE ? t == BM_T_SNARE : r == R_NOSNARE ? t != BM_T_SNARE : 1)
+    for (int q = 0; q < 16; q += L)
+        if (fits(r, piece_type(q)) && !(other && q == home))
             c[n++] = q;
-    }
     return n ? c[rr(n)] : home;
 }
 
@@ -823,9 +843,9 @@ static void make(line_t *l, int chr)
         int L = cut == BM_CUT_MIX ? mix_len(chr, t) : fixed;
         int r = role(chr, t, L), q = t, kind = BM_V_PLAIN;
         if (r != R_HOME && r != R_REST)
-            q = piece(L, r, t);
+            q = piece(L, r, t, 0);
         if (chr == BM_C_HALFTIME && t != 8 && piece_type(q) == BM_T_SNARE)
-            q = piece(L, R_NOSNARE, q);
+            q = piece(L, R_NOSNARE, q, 0);
         if (chr == BM_C_FILLS && t >= 12)
             kind = (int)WILD_KIND[3 + rr(5)];
         else if (chr == BM_C_BREAKCORE && t)
@@ -835,14 +855,12 @@ static void make(line_t *l, int chr)
         if (r != R_REST)
             put_piece(l, chr, t, L, q, kind);
     }
-    if (chr == BM_C_STRAIGHT) {         /* one to three pieces swapped for one of their kind */
+    if (chr == BM_C_STRAIGHT) {         /* one to three pieces swapped for another of their kind */
         for (int i = 0, n = 1 + rr(3); i < n && np > 1; i++) {
-            int j = 1 + rr(np - 1), t = at[j], L = len[j], home = t;
-            int q = piece(L, typed() ? (piece_type(t) == BM_T_SNARE ? R_SNARE :
-                                         piece_type(t) == BM_T_KICK ? R_KICK : R_NOSNARE) : R_ANY, home);
-            if (q == home)
-                q = (home + L) & 15;
-            put_piece(l, chr, t, L, q, BM_V_PLAIN);
+            int j = 1 + rr(np - 1), t = at[j], L = len[j];
+            int q = piece(L, role_of(piece_type(t)), t, 1);
+            if (q != t)                 /* (none other of its kind: it stays) */
+                put_piece(l, chr, t, L, q, BM_V_PLAIN);
         }
     }
     if (chr == BM_C_JUNGLE && np > 1 && chance(60))         /* the last piece rolled */

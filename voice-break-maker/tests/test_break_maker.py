@@ -84,6 +84,36 @@ class TestBreakMaker(unittest.TestCase):
         w = [rms(out[i:i + 480]) for i in range(at[1], len(out) - 480, 80)]      # (3 cycles)
         self.assertGreater(min(w) / max(w), 0.97)
 
+    def test_transposed_slices_stay_on_the_grid(self):
+        """TUNE up (pitch at speed): each slice runs out before its step ends, so the player drifts
+        ahead; it isn't carried on into the next slice but starts it again on the step. A click at
+        each slice's start: every step begins with its click."""
+        n = int(round(44100 * 240.0 / 140.0))
+        starts = [int(round(i * n / 16)) for i in range(16)]
+        clicks = [0] * n
+        for a in starts:
+            for i in range(100):
+                clicks[a + i] = int(10000 * math.sin(2 * math.pi * 1000.0 * i / 44100))
+        e = self.bm.machine((0,), pcm=clicks, starts=starts)
+        up2 = round(4095 * (0.5 + 2 / 24))
+        out, at = self.bar(e, [up2, GATE_OFF, 0, 0])
+        for t in range(1, 16):
+            self.assertGreater(peak(out[at[t] + 20:at[t] + 120]), 2000, t)
+
+    def test_stutter_turned_on_while_running(self):
+        """MODE to STUTTER while the break runs on: the next steps start with the stutter window, as
+        when it was on from the start."""
+        played = []
+        for late in (True, False):
+            e = self.machine(drums=True)
+            self.bm.knobs(e, [MID, GATE_OFF, 0 if late else 4095, 0], mode=ROLL if late else STUTTER)
+            self.bm.run_bar(e, steps=range(4), mode=ROLL if late else STUTTER)
+            self.bm.knobs(e, [MID, GATE_OFF, 4095, 0], mode=STUTTER)
+            played.append(self.bm.run_bar(e, steps=range(4, 8), mode=STUTTER))
+        (a, at), (b, _) = played
+        d = [x - y for x, y in zip(a[at[1]:], b[at[1]:])]
+        self.assertLess(db(rms(d), rms(b[at[1]:])), -20)
+
     def test_tempo_sets_the_speed(self):
         """At 175 BPM the 140 BPM break keeps its slices on the steps, a third faster (repitch)."""
         e = self.machine()
@@ -167,7 +197,7 @@ class TestBreakMaker(unittest.TestCase):
         self.assertGreater(rms(out[at[1]:at[1] + 200]), 500)       # step 2: the slice still sounds
         self.assertLess(peak(out[at[3] + L // 2:at[4] - 200]), 30)  # its gate closed in step 4
 
-    def test_auto_cut_uneven_steps(self):
+    def test_uneven_slice_steps(self):
         steps = [0, 3, 4, 8, 10, 12]
         e = self.cut(steps=steps)
         out, at = self.bar(e, [MID, GATE_OFF, 0, p2_of_slice(4, 6)], on={6}, trig_at={6: VEL['plain']})

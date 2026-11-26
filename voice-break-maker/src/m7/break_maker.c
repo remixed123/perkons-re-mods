@@ -43,6 +43,7 @@
 #define CLIP_CEIL       16800.0f
 #define XFADE_S         0.003f      /* a slice ending as another starts: 3 ms */
 #define ATT_S           0.0006f     /* a slice's start: 0.6 ms */
+#define CARRY_TOL_S     0.003f      /* a player this close to the next slice's start carries on: 3 ms */
 #define GATE_S          0.002f      /* the gate closing: 2 ms */
 #define STEP_DEF        6000.0f     /* a step's length before any are measured (120 BPM) */
 #define GATE_TOP        0.95f       /* DECAY from here: no gate */
@@ -352,6 +353,21 @@ static void set_speed(bm_t *k)
         k->speed = (float)BM->rate * (1.0f / SR);
 }
 
+/* the playing speed for TUNE + `extra` semitones */
+INLINE float ratio_of(const bm_t *k, float extra)
+{
+    return exp2f_((k->semis + extra) * (1.0f / 12.0f));
+}
+
+/* the status: slice s started (or carried on into), as `kind` */
+INLINE void started(bm_t *k, int s, int kind)
+{
+    k->last_slice = s;
+    k->st_slice = s;
+    k->st_kind = kind;
+    k->st_count++;
+}
+
 /* start slice s on a fresh player (the one before fades out), `into` frames into it (forward).
  * kind: bm_vel_kind; extra semitones; span: samples it has (for the gate) */
 static void start(bm_t *k, int s, int kind, float extra, float span, float into)
@@ -377,7 +393,7 @@ static void start(bm_t *k, int s, int kind, float extra, float span, float into)
     p->amp_to = 1.0f;
     p->amp_k = pole(ATT_S);
     p->gain = kind == BM_V_GHOST ? GHOST_GAIN : 1.0f;
-    p->ratio = exp2f_((k->semis + extra) * (1.0f / 12.0f));
+    p->ratio = ratio_of(k, extra);
     p->gph = 0.0f;
     p->gate = gate_of(k, span);
     p->len = 0.0f;
@@ -391,10 +407,7 @@ static void start(bm_t *k, int s, int kind, float extra, float span, float into)
             p->lo = rev ? p->pos - p->len : p->pos;
         }
     }
-    k->last_slice = s;
-    k->st_slice = s;
-    k->st_kind = kind;
-    k->st_count++;
+    started(k, s, kind);
 }
 
 /* rolls within the step: n hits, the first now */
@@ -439,27 +452,24 @@ static int pads_own(const bm_t *k)      /* a pad that owns the voice: the steps 
                        1u << BM_PAD_FREEZE | 1u << BM_PAD_TAPESTOP | 1u << BM_PAD_STUTTER)) != 0u;
 }
 
-/* slice s plain, where the player already is (it played the slice before it, at the break's own
- * speed, ungated): it carries on, no restart and no crossfade, so a piece of the bar running over
- * several slices plays as one; the new slice's gate from here */
+/* slice s plain, where the player already is (it played the slice before it, ungated, and is still
+ * on the grid): it carries on, no restart and no crossfade, so a piece of the bar running over
+ * several slices plays as one; the new slice's gate from here. A start would change it (a stutter
+ * window now) or it drifted off the grid (transposed at speed, half speed, a tempo change): start */
 static int carry_on(bm_t *k, int s, int kind, float extra, float span)
 {
     pl_t *p = &k->pl[k->cur];
     if (!p->active || p->amp_to < 1.0f || p->dir < 0.0f || p->len > 0.0f || p->gain != 1.0f ||
-        kind != BM_V_PLAIN || p->ratio != exp2f_((k->semis + extra) * (1.0f / 12.0f)))
+        kind != BM_V_PLAIN || p->ratio != ratio_of(k, extra) ||
+        (k->mode_j == M_STUTTER && zone6(k->p1) > 0))
         return 0;
-    float nf = (float)BM->frames, d = p->pos - (float)BM->slice[s], tol = nf * (1.0f / 64.0f);
-    if (d > 0.5f * nf)
-        d -= nf;
-    else if (d < -0.5f * nf)
-        d += nf;
+    /* (pos and the slice starts are both in 0 .. nf, so one wrap brings d to -nf/2 .. nf/2) */
+    float nf = (float)BM->frames, tol = (float)BM->rate * CARRY_TOL_S;
+    float d = wrapf(p->pos - (float)BM->slice[s] + 0.5f * nf, nf) - 0.5f * nf;
     if (d < -tol || d > tol)
         return 0;
     p->gate = gate_of(k, span);
-    k->last_slice = s;
-    k->st_slice = s;
-    k->st_kind = kind;
-    k->st_count++;
+    started(k, s, kind);
     return 1;
 }
 
